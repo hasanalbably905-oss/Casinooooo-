@@ -135,7 +135,7 @@ function legacyAdminAmount(input) {
   if (!input) return { error: 'missing' };
   const raw = String(input).trim();
   if (raw.includes('.') || raw.includes(',')) return { error: 'decimal' };
-  if (!/^\\d+(?:[kKmM])?$/.test(raw)) return { error: 'invalid' };
+  if (!/^\d+(?:[kKmM])?$/.test(raw)) return { error: 'invalid' };
   const suffix = raw.slice(-1).toLowerCase();
   const digits = /[km]$/i.test(raw) ? raw.slice(0, -1) : raw;
   const value = Number(digits) * (suffix === 'k' ? 1000 : suffix === 'm' ? 1000000 : 1);
@@ -163,7 +163,12 @@ async function adminBalance(message, args, add) {
     .setDescription(add ? 'تم الإضافة بنجاح' : 'تم حذف بنجاح')
     .addFields(
       { name: 'بواسطة', value: message.author.toString() },
-      { name: add ? 'اضاف' : 'حذف', value: '
+      { name: add ? 'اضاف' : 'حذف', value: '$' + String(n) },
+      { name: add ? 'المستلم' : 'من', value: user.toString() },
+      { name: 'الرصيد الحالي للمستلم', value: String(a.coins) },
+    );
+  return message.reply({ embeds: [embed] });
+}
 async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
   const user = await targetUser(message, args[1]);
