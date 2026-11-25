@@ -176,4 +176,4 @@ client.on('messageCreate', async (msg) => {
 });
 
 client.once('ready', () => console.log(`جاهز: ${client.user.tag}`));
-client.login("MTU3NTA2NDYyNjQxNTI4MDE1MA.GsS5i7.BoZfL-vl-spjW03YlvsK2NyU5LTvlKA62hQs7I");
+client.login(TOKEN);
