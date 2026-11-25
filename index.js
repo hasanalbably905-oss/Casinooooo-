@@ -205,7 +205,8 @@ async function balance(message, user) {
   const embed = new EmbedBuilder()
     .setColor('Gold')
     .setThumbnail(user.displayAvatarURL({ forceStatic: false }))
-    .setDescription(`**${user.username}** رصيدك هو : \`${data.coins}\``)
+    .setTitle('الرصيد الحالي لـ ' + user.username)
+    .setDescription('**' + String(data.coins) + ' كوين**')
     .setFooter({ text: message.guild.name })
     .setTimestamp();
 
