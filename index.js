@@ -210,7 +210,7 @@ async function balance(message, user) {
     .setFooter({ text: message.guild.name })
     .setTimestamp();
 
-  return message.channel.send({ embeds: [embed] });
+  return message.reply({ embeds: [embed] });
 }
 function legacyAdminAmount(input) {
   if (!input) return { error: 'missing' };
