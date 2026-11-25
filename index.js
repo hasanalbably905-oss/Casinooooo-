@@ -3,6 +3,7 @@ require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const https = require('node:https');
 const { Probot } = require('discord-probot-transfer');
 const {
   Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder,
@@ -24,6 +25,15 @@ const CFG = {
 const DIR = path.join(__dirname, 'data');
 const FILE = path.join(DIR, 'store.json');
 fs.mkdirSync(DIR, { recursive: true });
+
+// Persistent balance storage in a separate GitHub branch.
+// Keep this branch different from main: EuizHost auto-deploys pushes to main.
+const GH_REPO = process.env.GITHUB_REPOSITORY || 'hasanalbably905-oss/Casinooooo-';
+const GH_BRANCH = process.env.GITHUB_DATA_BRANCH || 'bot-data';
+const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+const GH_FILE_PATH = 'data/store.json';
+let githubFileSha = null;
+let githubDataBlocked = false;
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -48,14 +58,112 @@ const db = old && typeof old === 'object'
   ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {} }
   : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {} };
 
+function githubRequest(method, apiPath, payload) {
+  if (!GH_TOKEN) return Promise.reject(new Error('Missing GITHUB_TOKEN (or GH_TOKEN) environment variable.'));
+  return new Promise((resolve, reject) => {
+    const body = payload ? JSON.stringify(payload) : null;
+    const req = https.request({
+      hostname: 'api.github.com',
+      path: apiPath,
+      method,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: 'Bearer ' + GH_TOKEN,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'Batoot-Casino-Bot',
+        ...(body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}),
+      },
+    }, res => {
+      let raw = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        let data = {};
+        try { data = raw ? JSON.parse(raw) : {}; } catch {}
+        if (res.statusCode >= 200 && res.statusCode < 300) return resolve(data);
+        const error = new Error('GitHub API ' + res.statusCode + ': ' + (data.message || raw || 'Unknown error'));
+        error.statusCode = res.statusCode;
+        reject(error);
+      });
+    });
+    req.setTimeout(15000, () => req.destroy(new Error('GitHub API request timed out.')));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+const githubContentPath = '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH + '?ref=' + encodeURIComponent(GH_BRANCH);
+async function loadGitHubData() {
+  if (!GH_TOKEN) {
+    console.warn('GitHub data backup is not active: add GITHUB_TOKEN to EuizHost environment variables.');
+    return false;
+  }
+  try {
+    const remote = await githubRequest('GET', githubContentPath);
+    if (!remote.content || !remote.sha) throw new Error('GitHub data file is missing content or SHA.');
+    const parsed = JSON.parse(Buffer.from(remote.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || !parsed.users || typeof parsed.users !== 'object') {
+      throw new Error('GitHub data file has an invalid format; refusing to overwrite it.');
+    }
+    db.users = parsed.users;
+    db.games = parsed.games || {};
+    db.withdrawals = parsed.withdrawals || {};
+    db.processedTransfers = parsed.processedTransfers || {};
+    githubFileSha = remote.sha;
+    await fs.promises.writeFile(FILE, JSON.stringify(db, null, 2), 'utf8');
+    console.log('Loaded member balances from private GitHub data branch.');
+    return true;
+  } catch (error) {
+    if (error.statusCode === 404) {
+      console.log('No GitHub backup exists yet; the current local balances will be uploaded on first save.');
+      return false;
+    }
+    githubDataBlocked = true;
+    console.error('Could not load GitHub balance backup; remote writes are disabled to protect existing data:', error);
+    return false;
+  }
+}
+
+async function pushGitHubData(content) {
+  if (!GH_TOKEN) return;
+  if (githubDataBlocked) throw new Error('GitHub backup is blocked because its existing data could not be safely loaded.');
+  const payload = {
+    message: 'Save casino balances and bot data',
+    content: Buffer.from(content, 'utf8').toString('base64'),
+    ...(githubFileSha ? { sha: githubFileSha } : {}),
+    branch: GH_BRANCH,
+  };
+  try {
+    const result = await githubRequest('PUT', '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH, payload);
+    githubFileSha = result.content && result.content.sha ? result.content.sha : githubFileSha;
+  } catch (error) {
+    // Recover from a stale content SHA once, without force-overwriting newer data.
+    if (error.statusCode !== 409 && error.statusCode !== 422) throw error;
+    const latest = await githubRequest('GET', githubContentPath);
+    if (!latest.sha) throw error;
+    githubFileSha = latest.sha;
+    const retry = await githubRequest('PUT', '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH, {
+      message: 'Save casino balances and bot data',
+      content: Buffer.from(content, 'utf8').toString('base64'),
+      sha: githubFileSha,
+      branch: GH_BRANCH,
+    });
+    githubFileSha = retry.content && retry.content.sha ? retry.content.sha : githubFileSha;
+  }
+}
+
 let writeChain = Promise.resolve();
 function save() {
-  writeChain = writeChain.then(async () => {
+  const operation = writeChain.catch(() => {}).then(async () => {
+    const content = JSON.stringify(db, null, 2);
     const temp = FILE + '.tmp';
-    await fs.promises.writeFile(temp, JSON.stringify(db, null, 2), 'utf8');
+    await fs.promises.writeFile(temp, content, 'utf8');
     await fs.promises.rename(temp, FILE);
+    await pushGitHubData(content);
   });
-  return writeChain;
+  writeChain = operation;
+  return operation;
 }
 function account(id) {
   const key = String(id);
@@ -758,4 +866,16 @@ if (!process.env.DISCORD_TOKEN) {
   console.error('Missing DISCORD_TOKEN environment variable.');
   process.exit(1);
 }
-client.login(process.env.DISCORD_TOKEN);
+if (!process.env.DISCORD_TOKEN) {
+  console.error('Missing DISCORD_TOKEN environment variable.');
+  process.exit(1);
+}
+
+// Load the last committed balances before connecting to Discord.
+(async () => {
+  await loadGitHubData();
+  client.login(process.env.DISCORD_TOKEN);
+})().catch(error => {
+  console.error('Startup storage error:', error);
+  client.login(process.env.DISCORD_TOKEN);
+});
