@@ -15,7 +15,7 @@ const CFG = {
   gameRooms: (process.env.GAME_CHANNEL_IDS || '1575119362363490455,1575119396232232990,1575119427349913630').split(',').map(x => x.trim()).filter(Boolean),
   withdrawRoom: process.env.WITHDRAW_PANEL_CHANNEL_ID || '1575119654534381699',
   requestsRoom: process.env.WITHDRAW_REQUESTS_CHANNEL_ID || '1575119873875517540',
-  admins: (process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean),
+  admins: [...new Set(['992561603046293596', '1021122807616245760', ...(process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean)])],
   probotId: process.env.PROBOT_ID || '282859044593598464',
   probotOwners: (process.env.PROBOT_OWNER_IDS || '992561603046293596').split(',').map(x => x.trim()).filter(Boolean),
   minWithdraw: 4000000, maxWithdraw: 10000000000, fee: 0.04,
@@ -158,7 +158,7 @@ async function adminBalance(message, args, add) {
   a.coins += add ? n : -n;
   await save();
   const embed = new EmbedBuilder()
-    .setColor(0x2ecc71)
+    .setColor(0x57f287)
     .setThumbnail(user.displayAvatarURL({ dynamic: true }))
     .setDescription(add ? 'تم الإضافة بنجاح' : 'تم حذف بنجاح')
     .addFields(
