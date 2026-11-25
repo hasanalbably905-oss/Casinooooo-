@@ -199,7 +199,13 @@ async function targetUser(message, token) {
   return client.users.fetch(id).catch(() => null);
 }
 async function balance(message, user) {
-  return message.reply({ embeds: [makeEmbed('رصيد ' + user.username, 'رصيدك الحالي: **' + fmt(account(user.id).coins) + '** كوين.')] });
+  const embed = new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setThumbnail(user.avatarURL({ extension: 'png', size: 256 }) || user.displayAvatarURL({ extension: 'png', size: 256 }))
+    .setDescription('**' + user.username + '** رصيدك هو : \x60' + String(account(user.id).coins) + '\x60')
+    .setFooter({ text: message.guild.name })
+    .setTimestamp();
+  return message.channel.send({ embeds: [embed] });
 }
 function legacyAdminAmount(input) {
   if (!input) return { error: 'missing' };
