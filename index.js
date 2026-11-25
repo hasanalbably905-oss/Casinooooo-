@@ -400,6 +400,12 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (cmd === 'شحن') {
+      if (message.author.id !== CFG.owner) return message.reply('هذا الأمر للأونر فقط.');
+      const parsed = legacyAdminAmount(args[1]);
+      if (parsed.error) return message.reply('❎ **صيغة الشحن غير صحيحة**\\nمثال: `شحن 10m`');
+      return message.channel.send('#credit ' + CFG.owner + ' ' + String(parsed.value));
+    }
     if (cmd === 'withdraw' && message.channel.id === CFG.withdrawRoom) return message.channel.send(withdrawPanel());
     if (['فلوس', 'money', 'رصيدي', 'balance'].includes(cmd)) return balance(message, message.mentions.users.first() || message.author);
     if (['توب', 'top'].includes(cmd)) {
