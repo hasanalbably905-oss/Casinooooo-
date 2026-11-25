@@ -403,7 +403,7 @@ client.on('messageCreate', async message => {
     if (cmd === 'شحن') {
       if (message.author.id !== CFG.owner) return message.reply('هذا الأمر للأونر فقط.');
       const parsed = legacyAdminAmount(args[1]);
-      if (parsed.error) return message.reply('❎ **صيغة الشحن غير صحيحة**\\nمثال: `شحن 10m`');
+      if (parsed.error) return message.reply('❎ **صيغة الشحن غير صحيحة**\nمثال: `شحن 10m`');
       return message.channel.send('#credit ' + CFG.owner + ' ' + String(parsed.value));
     }
     if (cmd === 'withdraw' && message.channel.id === CFG.withdrawRoom) return message.channel.send(withdrawPanel());
@@ -431,7 +431,7 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس — عرض الرصيد\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nadd @عضو مبلغ — إضافة رصيد (للأونر فقط)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر فقط)')] });
+        'فلوس — عرض الرصيد\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر فقط)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر فقط)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
