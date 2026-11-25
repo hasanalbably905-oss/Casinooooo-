@@ -201,10 +201,11 @@ async function targetUser(message, token) {
 async function balance(message, user) {
   const data = account(user.id);
   await save();
+
   const embed = new EmbedBuilder()
-    .setColor(0xf1c40f)
-    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-    .setDescription('**' + user.username + '** رصيدك هو : \x60' + String(data.coins) + '\x60')
+    .setColor(0xF1C40F)
+    .setThumbnail(user.avatarURL({ forceStatic: false }))
+    .setDescription(`**${user.username}** رصيدك هو : \`${data.coins}\``)
     .setFooter({ text: message.guild.name })
     .setTimestamp();
 
