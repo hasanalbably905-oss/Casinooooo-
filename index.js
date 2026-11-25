@@ -3,6 +3,7 @@ require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { Probot } = require('discord-probot-transfer');
 const {
   Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
@@ -15,6 +16,8 @@ const CFG = {
   withdrawRoom: process.env.WITHDRAW_PANEL_CHANNEL_ID || '1575119654534381699',
   requestsRoom: process.env.WITHDRAW_REQUESTS_CHANNEL_ID || '1575119873875517540',
   admins: (process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean),
+  probotId: process.env.PROBOT_ID || '282859044593598464',
+  probotOwners: (process.env.PROBOT_OWNER_IDS || process.env.OWNER_ID || '1483368871032520704').split(',').map(x => x.trim()).filter(Boolean),
   minWithdraw: 4000000, maxWithdraw: 10000000000, fee: 0.04,
   inviteMs: 120000, gameMs: 600000,
 };
@@ -81,6 +84,38 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Channel],
 });
+client.probot = Probot(client, {
+  fetchGuilds: true,
+  data: [{
+    fetchMembers: true,
+    guildId: CFG.guild,
+    probotId: CFG.probotId,
+    owners: CFG.probotOwners,
+  }],
+});
+
+client.probot.on('transfered', async (guild, data, error) => {
+  try {
+    if (error) return console.error('ProBot transfer error:', error);
+    if (!data || data.isOwner !== true || !data.member) return;
+    const memberId = data.member.id || (data.member.user && data.member.user.id);
+    const credited = Number(data.price);
+    if (!memberId || !Number.isSafeInteger(credited) || credited <= 0) return;
+    account(memberId).coins += credited;
+    await save();
+    const destination = data.channel || (guild && guild.channel);
+    if (destination && typeof destination.send === 'function') {
+      await destination.send({
+        embeds: [makeEmbed('تم شحن الرصيد بنجاح',
+          'العضو: <@' + memberId + '>\\nالمبلغ المضاف: **' + fmt(credited) +
+          '**\\nالرصيد الحالي: **' + fmt(account(memberId).coins) + '**')],
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('ProBot transfer handler:', err);
+  }
+});
+
 async function ephemeral(i, content) {
   const payload = { content, ephemeral: true };
   if (i.deferred || i.replied) return i.followUp(payload).catch(() => {});
