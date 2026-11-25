@@ -17,7 +17,6 @@ const CFG = {
   requestsRoom: process.env.WITHDRAW_REQUESTS_CHANNEL_ID || '1575119873875517540',
   admins: (process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean),
   probotId: process.env.PROBOT_ID || '282859044593598464',
-  probotOwners: (process.env.PROBOT_OWNER_IDS || '992561603046293596').split(',').map(x => x.trim()).filter(Boolean),
   minWithdraw: 4000000, maxWithdraw: 10000000000, fee: 0.04,
   inviteMs: 120000, gameMs: 600000,
 };
@@ -46,8 +45,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {} }
-  : { users: importOldUsers(), games: {}, withdrawals: {} };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {} }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {} };
 
 let writeChain = Promise.resolve();
 function save() {
@@ -90,26 +89,97 @@ client.probot = Probot(client, {
     fetchMembers: true,
     guildId: CFG.guild,
     probotId: CFG.probotId,
-    owners: CFG.probotOwners,
+    // Credits are accepted only when sent to the configured bot owner account.
+    owners: [CFG.owner],
   }],
 });
 
 client.probot.on('transfered', async (guild, data, error) => {
   try {
-    if (error) return console.error('ProBot transfer error:', error);
-    if (!data || data.isOwner !== true || !data.member) return;
-    const memberId = data.member.id || (data.member.user && data.member.user.id);
-    const credited = Number(data.price);
-    if (!memberId || !Number.isSafeInteger(credited) || credited <= 0) return;
-    account(memberId).coins += credited;
+    if (error) {
+      console.error('ProBot transfer error:', error);
+      return;
+    }
+    if (!data || !data.member) {
+      console.warn('ProBot transfer ignored: missing transfer data/member.');
+      return;
+    }
+
+    const memberId = String(data.member.id || (data.member.user && data.member.user.id) || '');
+    const receiver = data.receiver;
+    const receiverId = String(
+      (receiver && receiver.id) ||
+      (receiver && receiver.user && receiver.user.id) ||
+      ''
+    );
+    const receiverVerified = receiverId
+      ? receiverId === CFG.owner
+      : (data.isOwner === true || data.owner === true);
+    const credited = Number(String(data.price ?? '').replace(/,/g, '').trim());
+
+    if (!memberId || !receiverVerified || !Number.isSafeInteger(credited) || credited <= 0) {
+      console.warn('ProBot transfer ignored: failed validation.', {
+        memberId: Boolean(memberId),
+        receiverId: receiverId || 'not provided',
+        isOwner: data.isOwner,
+        owner: data.owner,
+        price: data.price,
+      });
+      return;
+    }
+
+    // Use a source message/transaction ID when the library exposes one.
+    const transferId = String(
+      (data.message && data.message.id) ||
+      data.messageId ||
+      data.transferId ||
+      data.id ||
+      ''
+    );
+    if (transferId && db.processedTransfers[transferId]) {
+      console.log('Duplicate ProBot transfer ignored:', transferId);
+      return;
+    }
+
+    const userAccount = account(memberId);
+    const previousBalance = userAccount.coins;
+    userAccount.coins += credited;
+    if (transferId) {
+      db.processedTransfers[transferId] = Date.now();
+      const ids = Object.keys(db.processedTransfers);
+      if (ids.length > 5000) {
+        ids.sort((a, b) => db.processedTransfers[a] - db.processedTransfers[b]);
+        for (const id of ids.slice(0, ids.length - 5000)) delete db.processedTransfers[id];
+      }
+    }
     await save();
+
+    const sender = data.member.user || data.member;
+    const avatar = typeof sender.displayAvatarURL === 'function'
+      ? sender.displayAvatarURL({ dynamic: true })
+      : null;
+    const embed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle('تم شحن الرصيد بنجاح')
+      .setDescription('تم التحقق من عملية التحويل وإضافة الرصيد إلى حسابك.')
+      .addFields(
+        { name: 'العضو', value: '<@' + memberId + '>', inline: true },
+        { name: 'المبلغ المحوّل', value: '**' + fmt(credited) + '** كوين', inline: true },
+        { name: 'المستلم', value: '<@' + CFG.owner + '>', inline: true },
+        { name: 'الرصيد السابق', value: fmt(previousBalance) + ' كوين', inline: true },
+        { name: 'الرصيد الحالي', value: '**' + fmt(userAccount.coins) + '** كوين', inline: true },
+      )
+      .setFooter({ text: 'Batoot Casino • تحويل ProBot موثّق' })
+      .setTimestamp();
+    if (avatar) embed.setThumbnail(avatar);
+
     const destination = data.channel || (guild && guild.channel);
     if (destination && typeof destination.send === 'function') {
-      await destination.send({
-        embeds: [makeEmbed('تم شحن الرصيد بنجاح',
-          'العضو: <@' + memberId + '>\nالمبلغ المضاف: **' + fmt(credited) +
-          '**\nالرصيد الحالي: **' + fmt(account(memberId).coins) + '**')],
-      }).catch(() => {});
+      await destination.send({ embeds: [embed] }).catch(err => {
+        console.error('Could not send ProBot credit confirmation:', err);
+      });
+    } else {
+      console.warn('ProBot transfer credited, but no text channel was available for confirmation.');
     }
   } catch (err) {
     console.error('ProBot transfer handler:', err);
