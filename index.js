@@ -81,7 +81,7 @@ function active(id, excludeId) {
 const makeEmbed = (title, description) => new EmbedBuilder().setColor(0x30343b).setTitle(title).setDescription(description || '').setFooter({ text: 'Batoot Casino' }).setTimestamp();
 const btn = (id, label, style) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent],
   partials: [Partials.Channel],
 });
 client.probot = Probot(client, {
@@ -107,8 +107,8 @@ client.probot.on('transfered', async (guild, data, error) => {
     if (destination && typeof destination.send === 'function') {
       await destination.send({
         embeds: [makeEmbed('تم شحن الرصيد بنجاح',
-          'العضو: <@' + memberId + '>\\nالمبلغ المضاف: **' + fmt(credited) +
-          '**\\nالرصيد الحالي: **' + fmt(account(memberId).coins) + '**')],
+          'العضو: <@' + memberId + '>\nالمبلغ المضاف: **' + fmt(credited) +
+          '**\nالرصيد الحالي: **' + fmt(account(memberId).coins) + '**')],
       }).catch(() => {});
     }
   } catch (err) {
