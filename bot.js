@@ -4,7 +4,7 @@ const fs = require('fs');
 
 // ---------- الإعدادات ----------
 const TOKEN = process.env.DISCORD_TOKEN; // التوكن من متغيرات البيئة، لا تحطه في الكود
-if (!TOKEN) throw new Error('ضع DISCORD_TOKEN في متغيرات البيئة');
+if (!TOKEN) throw new Error('MTU3NTA2NDYyNjQxNTI4MDE1MA.GsS5i7.BoZfL-vl-spjW03YlvsK2NyU5LTvlKA62hQs7I');
 const BANK_ID = '1483368871032520704';       // الحساب اللي يستلم الكريدت (نفس الايدي في #credit)
 const PROBOT_BOT_ID = '282859044593598464';  // ايدي بوت ProBot نفسه
 const COVER_TAX = false;                     // true = البوت يكتب مبلغ أكبر شوي (ضريبة 5%) عشان يوصل العضو المبلغ كامل
