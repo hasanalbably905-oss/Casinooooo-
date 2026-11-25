@@ -385,7 +385,7 @@ client.on('messageCreate', async message => {
         .sort((a, b) => b[1].coins - a[1].coins)
         .slice(0, 10);
       const lines = ranked.map(([id, data], i) =>
-        '**#' + (i + 1) + '. ' + (client.users.cache.get(id) || message.guild.members.cache.get(id).user).toString() + '** - \`' + fmt(data.coins) + '\`'
+        '**#' + (i + 1) + '. ' + (client.users.cache.get(id) || message.guild.members.cache.get(id).user).toString() + '** - `' + fmt(data.coins) + '`'
       );
       const embed = new EmbedBuilder()
         .setAuthor({ name: 'توب رصيد' })
