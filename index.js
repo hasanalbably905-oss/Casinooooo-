@@ -308,17 +308,19 @@ async function targetUser(message, token) {
 }
 async function balance(message, user) {
   const data = account(user.id);
-  await save();
 
   const embed = new EmbedBuilder()
     .setColor('Gold')
     .setThumbnail(user.displayAvatarURL({ forceStatic: false }))
     .setTitle('الرصيد الحالي لـ ' + user.username)
-    .setDescription('**' + String(data.coins) + ' كوين**')
+    .setDescription('**' + fmt(data.coins) + ' كوين**')
     .setFooter({ text: message.guild.name })
     .setTimestamp();
 
-  return message.reply({ embeds: [embed] });
+  // Reply immediately; a GitHub backup failure must not silence the balance command.
+  const sent = await message.reply({ embeds: [embed] });
+  save().catch(error => console.error('Balance backup save failed:', error));
+  return sent;
 }
 function legacyAdminAmount(input) {
   if (!input) return { error: 'missing' };
