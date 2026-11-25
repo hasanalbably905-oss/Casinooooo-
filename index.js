@@ -357,7 +357,7 @@ async function sweep() {
   const now = Date.now();
   for (const g of Object.values(db.games)) {
     if (!g || !g.expires || g.expires > now) continue;
-    if (g.status === 'pending') {
+    if (g.status === 'pending' || g.status === 'awaiting_accept') {
       g.status = 'expired';
       await editGame(g, 'انتهت صلاحية التحدي', 'لم يتم قبول التحدي خلال الوقت المحدد.', []);
     } else if (g.status === 'selecting' || g.status === 'playing') {
