@@ -437,10 +437,14 @@ async function gameButton(i, parts) {
       .setDescription('> تنبيه: في حال عدم استجابة الطرفين و عدم اكمال التحدي يؤدي الى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب اي مبلغ من الطرفين.')
       .addFields(details, { name: 'المبلغ:', value: fmt(g.bet) });
     await save();
-    return i.update({
+    await i.deferReply({ ephemeral: true });
+    await i.message.edit({
       content: '> بانتظار رد من <@' + g.p2 + '> ...',
       embeds: [waiting],
       components: gameRows(g),
+    });
+    return i.editReply({
+      content: '> لقد تم اختيار اللعبة هي : `' + (action === 'dice' ? 'نرد' : 'الرقم التقريبي') + '` !!',
     });
   }
   if (action === 'accept' || action === 'decline') {
@@ -466,16 +470,19 @@ async function gameButton(i, parts) {
     if (g.mode === 'close') initializeApproximateGame(g);
     else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
     await save();
-    const gameEmbed = g.mode === 'close' ? legacyCloseEmbed(g) : legacyGameEmbed(g);
-    await i.update({
-      content: '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\n اصبح دورك',
-      embeds: [gameEmbed],
-      components: gameRows(g),
-    });
-    await i.followUp({
+    await i.deferReply({ ephemeral: true });
+    await i.editReply({
       content: '> لقد تم القبول اللعبة هي : `' + (g.mode === 'dice' ? 'نرد' : 'الرقم التقريبي') + '` ، اللعب مع : <@' + g.p1 + '> !!',
-      ephemeral: true,
-    }).catch(() => {});
+    });
+    // Legacy behavior: confirm privately, then publish the first turn after 2.5 seconds.
+    setTimeout(() => {
+      editGame(
+        g,
+        'بدأ التحدي',
+        '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\\n اصبح دورك',
+        gameRows(g),
+      ).catch(err => console.error('Could not start accepted game:', err));
+    }, 2500);
     return;
   }
   if (['low', 'high', 'finish'].includes(action)) {
