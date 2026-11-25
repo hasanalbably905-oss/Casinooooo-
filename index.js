@@ -471,7 +471,6 @@ client.on('messageCreate', async message => {
   const cmd = args[0].toLowerCase();
   try {
     if (cmd === 'شحن') {
-      if (message.author.id !== CFG.owner) return message.reply('هذا الأمر للأونر فقط.');
       const parsed = legacyAdminAmount(args[1]);
       if (parsed.error) return message.reply('❎ **صيغة الشحن غير صحيحة**\nمثال: `شحن 10m`');
       return message.channel.send('#credit ' + CFG.owner + ' ' + String(parsed.value));
