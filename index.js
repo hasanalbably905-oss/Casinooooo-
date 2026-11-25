@@ -194,13 +194,34 @@ async function challenge(message, args) {
   g.message = sent.id;
   await save();
 }
+function legacyPlayerTag(id) {
+  const user = client.users.cache.get(String(id));
+  return user ? user.tag : String(id);
+}
+function legacyGameEmbed(g) {
+  return new EmbedBuilder()
+    .setTitle('بيانات التحدي')
+    .addFields(
+      { name: legacyPlayerTag(g.p1), value: '> ' + String(g.rolls && g.rolls[g.p1] !== undefined ? g.rolls[g.p1] : 0) },
+      { name: legacyPlayerTag(g.p2), value: '> ' + String(g.rolls && g.rolls[g.p2] !== undefined ? g.rolls[g.p2] : 0) },
+    );
+}
+function legacyCloseEmbed(g) {
+  return new EmbedBuilder()
+    .setColor(0x000000)
+    .setDescription('> تنبيه: في حال عدم استجابة الطرفين وعدم إكمال التحدي يؤدي إلى خصم نصف المبلغ من الطرفين.\\n> عند التعادل لا يتم سحب أي مبلغ من الطرفين.')
+    .addFields(
+      { name: '📊 لعبة الرقم التقريبي:', value: '> في كل جولة سوف تحصل على رقم عشوائي، وعليك أن تحصل على نفس الرقم أو أقل منه؛ الذي يحصل عليه يفوز، وفي حال الحصول على أعلى تعتبر خاسر. جولة واحدة لكل تحدٍ! إنهاء الجولة يعني إنهاء التحدي، والتعادل ليس فوزاً!' },
+      { name: 'المبلغ:', value: String(g.bet) },
+    );
+}
 function gameRows(g) {
   if (g.status === 'selecting') return [new ActionRowBuilder().addComponents(
     btn('g:dice:' + g.id, '🎲 النرد', ButtonStyle.Primary),
     btn('g:close:' + g.id, '🔢 الرقم التقريبي', ButtonStyle.Primary),
   )];
   if (g.status === 'playing') return [new ActionRowBuilder().addComponents(
-    btn('g:roll:' + g.id, g.mode === 'dice' ? 'ارمِ النرد' : 'اختر رقمك', ButtonStyle.Success),
+    btn('g:roll:' + g.id, g.mode === 'dice' ? 'العب نردك' : 'اختر رقمك', ButtonStyle.Success),
   )];
   return [];
 }
@@ -208,7 +229,8 @@ async function editGame(g, title, description, components) {
   const ch = await client.channels.fetch(g.channel).catch(() => null);
   if (!ch || !ch.isTextBased()) return;
   const msg = await ch.messages.fetch(g.message).catch(() => null);
-  if (msg) await msg.edit({ embeds: [makeEmbed(title, description)], components: components || [] }).catch(() => {});
+  const embed = g.mode === 'close' ? legacyCloseEmbed(g) : legacyGameEmbed(g);
+  if (msg) await msg.edit({ content: description || null, embeds: [embed], components: components || [] }).catch(() => {});
 }
 async function settle(g, winner, result) {
   if (!g || g.status !== 'playing') return;
@@ -293,7 +315,9 @@ async function gameButton(i, parts) {
     g.rolls[uid] = g.mode === 'dice' ? crypto.randomInt(1, 7) : crypto.randomInt(1, 101);
     await save();
     if (g.rolls[g.p1] === undefined || g.rolls[g.p2] === undefined) {
-      return i.update({ embeds: [makeEmbed('تم تسجيل دورك', 'تم تسجيل نتيجتك بشكل مخفي. بانتظار اللاعب الآخر.')], components: gameRows(g) });
+      const nextPlayer = g.rolls[g.p1] === undefined ? g.p1 : g.p2;
+      const waitingEmbed = g.mode === 'dice' ? legacyGameEmbed(g) : legacyCloseEmbed(g);
+      return i.update({ content: '<@' + nextPlayer + '>\\n اصبح دورك', embeds: [waitingEmbed], components: gameRows(g) });
     }
     const a = g.rolls[g.p1], b = g.rolls[g.p2];
     let winner = null;
