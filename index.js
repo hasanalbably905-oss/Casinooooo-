@@ -18,7 +18,7 @@ const CFG = {
   admins: (process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean),
   probotId: process.env.PROBOT_ID || '282859044593598464',
   minWithdraw: 4000000, maxWithdraw: 10000000000, fee: 0.04,
-  inviteMs: 120000, gameMs: 600000,
+  inviteMs: 40000, gameMs: 90000,
 };
 
 const DIR = path.join(__dirname, 'data');
@@ -277,21 +277,34 @@ function legacyGameEmbed(g) {
     );
 }
 function legacyCloseEmbed(g) {
+  const max = g.closeMax || '—';
+  const players = [g.p1, g.p2].map(id => {
+    const nums = (g.closeNumbers && g.closeNumbers[id]) || [];
+    const total = (g.closeSums && g.closeSums[id]) || 0;
+    const done = g.closeDone && g.closeDone[id];
+    const status = done ? 'Done' : g.closeTurn === id ? '**Playing..**' : 'Waiting..';
+    const expression = nums.length ? nums.join(' + ') + ' = **' + total + '**' : status;
+    return { name: legacyPlayerTag(id), value: '> ' + expression };
+  });
   return new EmbedBuilder()
     .setColor(0x000000)
-    .setDescription('> تنبيه: في حال عدم استجابة الطرفين وعدم إكمال التحدي يؤدي إلى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب أي مبلغ من الطرفين.')
-    .addFields(
-      { name: '📊 لعبة الرقم التقريبي:', value: '> في كل جولة سوف تحصل على رقم عشوائي، وعليك أن تحصل على نفس الرقم أو أقل منه؛ الذي يحصل عليه يفوز، وفي حال الحصول على أعلى تعتبر خاسر. جولة واحدة لكل تحدٍ! إنهاء الجولة يعني إنهاء التحدي، والتعادل ليس فوزاً!' },
-      { name: 'المبلغ:', value: String(g.bet) },
-    );
+    .setTitle('بيانات التحدي')
+    .setDescription('اقصى رقم : **' + max + '**')
+    .addFields(players)
+    .setFooter({ text: 'الرقم التقريبي • المبلغ: ' + fmt(g.bet) });
 }
 function gameRows(g) {
   if (g.status === 'selecting') return [new ActionRowBuilder().addComponents(
-    btn('g:dice:' + g.id, '🎲 النرد', ButtonStyle.Primary),
-    btn('g:close:' + g.id, '🔢 الرقم التقريبي', ButtonStyle.Primary),
+    btn('g:dice:' + g.id, 'النرد 🎲', ButtonStyle.Primary),
+    btn('g:close:' + g.id, 'الرقم التقريبي 📊', ButtonStyle.Primary),
   )];
-  if (g.status === 'playing') return [new ActionRowBuilder().addComponents(
-    btn('g:roll:' + g.id, g.mode === 'dice' ? 'العب نردك' : 'اختر رقمك', ButtonStyle.Success),
+  if (g.status === 'playing' && g.mode === 'close') return [new ActionRowBuilder().addComponents(
+    btn('g:low:' + g.id, g.closeRanges.low[0] + ' - ' + g.closeRanges.low[1], ButtonStyle.Primary),
+    btn('g:finish:' + g.id, 'finish', ButtonStyle.Success),
+    btn('g:high:' + g.id, g.closeRanges.high[0] + ' - ' + g.closeRanges.high[1], ButtonStyle.Primary),
+  )];
+  if (g.status === 'playing' && g.mode === 'dice') return [new ActionRowBuilder().addComponents(
+    btn('g:roll:' + g.id, 'العب نردك', ButtonStyle.Success),
   )];
   return [];
 }
@@ -306,10 +319,12 @@ async function settle(g, winner, result) {
   if (!g || g.status !== 'playing') return;
   g.status = 'finished';
   if (winner) {
-    const pot = g.bet * 2;
-    const payout = pot - Math.floor(pot * CFG.fee);
+    const fee = Math.floor(g.bet * CFG.fee);
+    const payout = g.mode === 'close'
+      ? (g.bet * 2 - fee)
+      : (g.bet * 2 - Math.floor(g.bet * 2 * CFG.fee));
     account(winner).coins += payout;
-    g.result = result + '\nالفائز: <@' + winner + '> — الجائزة: **' + fmt(payout) + '** بعد رسوم 4%.';
+    g.result = result + '\nالفائز: <@' + winner + '> — الجائزة: **' + fmt(payout) + '** بعد الرسوم.';
   } else {
     account(g.p1).coins += g.bet;
     account(g.p2).coins += g.bet;
@@ -321,11 +336,14 @@ async function settle(g, winner, result) {
 async function refund(g, reason) {
   if (!g || !g.escrow || !['selecting', 'playing'].includes(g.status)) return;
   g.status = 'cancelled';
-  account(g.p1).coins += g.bet;
-  account(g.p2).coins += g.bet;
-  g.result = reason;
+  const returned = g.mode === 'close' ? Math.floor(g.bet / 2) : g.bet;
+  account(g.p1).coins += returned;
+  account(g.p2).coins += returned;
+  g.result = g.mode === 'close'
+    ? reason + '\nتم خصم نصف الرهان من كل لاعب بسبب عدم إكمال التحدي.'
+    : reason;
   await save();
-  await editGame(g, 'تم إلغاء التحدي', reason, []);
+  await editGame(g, 'تم إلغاء التحدي', g.result, []);
 }
 async function sweep() {
   const now = Date.now();
@@ -339,6 +357,48 @@ async function sweep() {
     }
   }
   await save();
+}
+function initializeApproximateGame(g) {
+  const firstNumbers = [];
+  for (let n = 19; n <= 79; n += 3) firstNumbers.push(n);
+  const secondNumbers = [2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7];
+  const thirdNumbers = [4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14];
+  const fourthNumbers = [5, 6, 6, 7, 8, 8, 9, 10, 10, 11, 12, 12, 13, 14, 15, 15, 16, 16, 17, 18, 18, 19];
+  const fifthNumbers = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 22, 23, 24, 25, 26, 27];
+  const index = crypto.randomInt(firstNumbers.length);
+  g.closeMax = firstNumbers[index];
+  g.closeRanges = {
+    low: [secondNumbers[index], thirdNumbers[index]],
+    high: [fourthNumbers[index], fifthNumbers[index]],
+  };
+  g.closeNumbers = { [g.p1]: [], [g.p2]: [] };
+  g.closeSums = { [g.p1]: 0, [g.p2]: 0 };
+  g.closeDone = { [g.p1]: false, [g.p2]: false };
+  g.closeOrder = crypto.randomInt(2) === 0 ? [g.p1, g.p2] : [g.p2, g.p1];
+  g.closeTurn = g.closeOrder[0];
+}
+async function finishApproximateTurn(g, reason) {
+  g.closeDone[g.closeTurn] = true;
+  const next = g.closeOrder.find(id => !g.closeDone[id]);
+  if (next) {
+    g.closeTurn = next;
+    g.expires = Date.now() + 90000;
+    await save();
+    await editGame(g, 'دور اللاعب التالي', '<@' + next + '>\n اصبح دورك !', gameRows(g));
+    return;
+  }
+  const a = g.closeSums[g.p1];
+  const b = g.closeSums[g.p2];
+  const aSafe = a <= g.closeMax;
+  const bSafe = b <= g.closeMax;
+  let winner = null;
+  if (aSafe !== bSafe) winner = aSafe ? g.p1 : g.p2;
+  else if (aSafe && bSafe && a !== b) winner = a > b ? g.p1 : g.p2;
+  const result = 'اقصى رقم: **' + g.closeMax + '**\n' +
+    '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '**\n' +
+    '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '**' +
+    (reason ? '\n' + reason : '');
+  await settle(g, winner, result);
 }
 async function gameButton(i, parts) {
   const action = parts[1];
@@ -370,13 +430,52 @@ async function gameButton(i, parts) {
     g.mode = action;
     g.status = 'playing';
     g.rolls = {};
-    g.target = action === 'close' ? crypto.randomInt(1, 101) : null;
     g.expires = Date.now() + CFG.gameMs;
+    if (action === 'close') {
+      initializeApproximateGame(g);
+      await save();
+      return i.update({
+        content: '<@' + g.closeTurn + '>\n انه دورك',
+        embeds: [legacyCloseEmbed(g)],
+        components: gameRows(g),
+      });
+    }
     await save();
-    const rules = action === 'dice'
-      ? 'كل لاعب يرمي مرة واحدة، والرقم الأعلى يفوز.'
-      : 'يوجد رقم سري من 1 إلى 100؛ الأقرب إليه يفوز. كل لاعب يختار مرة واحدة.';
-    return i.update({ embeds: [makeEmbed(action === 'dice' ? 'لعبة النرد' : 'لعبة الرقم التقريبي', rules + '\nالرهان: **' + fmt(g.bet) + '** لكل لاعب.')], components: gameRows(g) });
+    return i.update({ embeds: [makeEmbed('لعبة النرد', 'كل لاعب يرمي مرة واحدة، والرقم الأعلى يفوز.\nالرهان: **' + fmt(g.bet) + '** لكل لاعب.')], components: gameRows(g) });
+  }
+  if (['low', 'high', 'finish'].includes(action)) {
+    if (g.status !== 'playing' || g.mode !== 'close') return ephemeral(i, 'لعبة الرقم التقريبي غير نشطة.');
+    if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'أنت لست أحد لاعبي هذا التحدي.');
+    if (g.closeTurn !== uid) return ephemeral(i, 'انه ليس دورك !');
+    if (g.closeDone[uid]) return ephemeral(i, 'لقد أنهيت دورك بالفعل.');
+    if (action === 'finish') {
+      await i.deferUpdate();
+      await finishApproximateTurn(g);
+      return;
+    }
+    const range = action === 'low' ? g.closeRanges.low : g.closeRanges.high;
+    const number = crypto.randomInt(range[0], range[1] + 1);
+    g.closeNumbers[uid].push(number);
+    g.closeSums[uid] += number;
+    g.expires = Date.now() + 90000;
+    await i.deferUpdate();
+    const total = g.closeSums[uid];
+    if (total >= g.closeMax) {
+      await i.followUp({
+        content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\n' +
+          (total === g.closeMax ? 'تهانينا، حصلت على الرقم المطلوب وتم إنهاء دورك.' : 'يا للأسف، لقد تخطيت الرقم المطلوب وتم إنهاء دورك.'),
+        ephemeral: true,
+      }).catch(() => {});
+      await finishApproximateTurn(g, total === g.closeMax ? 'وصل إلى الحد الأقصى.' : 'تجاوز الحد الأقصى.');
+      return;
+    }
+    await save();
+    await editGame(g, 'لعبة الرقم التقريبي', '<@' + uid + '>\n اصبح مجموعك **' + total + '** — أكمل أو اضغط finish لإنهاء دورك.', gameRows(g));
+    await i.followUp({
+      content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\nانتبه ألا يصبح مجموعك أعلى من الرقم المطلوب؛ يمكنك إنهاء دورك بالضغط على finish.',
+      ephemeral: true,
+    }).catch(() => {});
+    return;
   }
   if (action === 'roll') {
     if (g.status !== 'playing') return ephemeral(i, 'اللعبة ليست في مرحلة اللعب.');
