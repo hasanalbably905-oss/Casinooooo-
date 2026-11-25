@@ -85,7 +85,12 @@ async function loadGitHubData() {
     if (!parsed || typeof parsed !== 'object' || !parsed.users || typeof parsed.users !== 'object') {
       throw new Error('Invalid GitHub data format; refusing to overwrite data.');
     }
-    db.users = parsed.users;
+    // Never replace locally imported balances with a newly-created empty GitHub store.
+    const remoteUsers = parsed.users;
+    const localUsers = db.users && typeof db.users === 'object' ? db.users : {};
+    db.users = Object.keys(remoteUsers).length === 0 && Object.keys(localUsers).length > 0
+      ? localUsers
+      : remoteUsers;
     db.games = parsed.games || {};
     db.withdrawals = parsed.withdrawals || {};
     db.processedTransfers = parsed.processedTransfers || {};
