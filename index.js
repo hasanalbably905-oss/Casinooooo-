@@ -245,21 +245,24 @@ async function challenge(message, args) {
   const bet = amountOf(args[2]);
   if (!user || user.bot || user.id === message.author.id || !bet) return message.reply('الاستخدام: تحدي @العضو المبلغ');
   if (active(message.author.id) || active(user.id)) return message.reply('أحد اللاعبين لديه تحدٍ لم ينتهِ بعد.');
-  if (account(message.author.id).coins < bet || account(user.id).coins < bet) return message.reply('يجب أن يمتلك كل لاعب رصيداً يكفي للرهان: **' + fmt(bet) + '**.');
+  if (account(message.author.id).coins < bet) return message.reply('❎ **ليس لديك ما يكفي للتحدي على ' + fmt(bet) + '**');
+  if (account(user.id).coins < bet) return message.reply('❎ **ليس لدى صديقك ما يكفي للتحدي على ' + fmt(bet) + '**');
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   const g = db.games[id] = {
     id, p1: message.author.id, p2: user.id, bet, status: 'pending',
-    escrow: false, channel: message.channel.id, message: null,
+    escrow: false, channel: message.channel.id, message: null, mode: null,
     expires: Date.now() + CFG.inviteMs, created: Date.now(),
   };
-  const sent = await message.channel.send({
-    content: user.toString(),
-    embeds: [makeEmbed('تحدي جديد', message.author.toString() + ' يتحدى ' + user.toString() + '\nالرهان لكل لاعب: **' + fmt(bet) + '** كوين.\nهل تقبل؟')],
-    components: [new ActionRowBuilder().addComponents(
-      btn('g:accept:' + id, 'قبول التحدي', ButtonStyle.Success),
-      btn('g:decline:' + id, 'رفض', ButtonStyle.Danger),
-    )],
-  }).catch(() => null);
+  const embed = new EmbedBuilder()
+    .setColor(0x808080)
+    .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
+    .setTitle('اختار نوع اللعبة')
+    .setDescription('> العضو: ' + user.toString() + '\n\nالمبلغ: `' + fmt(bet) + '`')
+    .addFields(
+      { name: 'لعبة النرد 🎲', value: '> يفوز الذي يحصل على أعلى مجموع من ثلاث مرات, التعادل ليس فوزا !' },
+      { name: 'الرقم التقريبي 📊', value: '> في كل جولة سوف تحصل على رقم عشوائي, و انت عليك ان تحصل على نفس الرقم او اقل منه, الذي يحصل عليه يفوز, في حال الحصول على اعلى تعتبر خاسر, جولة واحدة لكل تحدي ! انهاء الجولة يعني انهاء التحدي, التعادل ليس فوزا !' },
+    );
+  const sent = await message.reply({ embeds: [embed], components: gameRows(g), allowedMentions: { repliedUser: false } }).catch(() => null);
   if (!sent) { delete db.games[id]; return message.reply('تعذر إرسال التحدي.'); }
   g.message = sent.id;
   await save();
@@ -294,9 +297,14 @@ function legacyCloseEmbed(g) {
     .setFooter({ text: 'الرقم التقريبي • المبلغ: ' + fmt(g.bet) });
 }
 function gameRows(g) {
-  if (g.status === 'selecting') return [new ActionRowBuilder().addComponents(
+  if (g.status === 'pending') return [new ActionRowBuilder().addComponents(
     btn('g:dice:' + g.id, 'النرد 🎲', ButtonStyle.Primary),
     btn('g:close:' + g.id, 'الرقم التقريبي 📊', ButtonStyle.Primary),
+    btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger),
+  )];
+  if (g.status === 'awaiting_accept') return [new ActionRowBuilder().addComponents(
+    btn('g:accept:' + g.id, 'قبول', ButtonStyle.Success),
+    btn('g:decline:' + g.id, 'رفض', ButtonStyle.Danger),
   )];
   if (g.status === 'playing' && g.mode === 'close') return [new ActionRowBuilder().addComponents(
     btn('g:low:' + g.id, g.closeRanges.low[0] + ' - ' + g.closeRanges.low[1], ButtonStyle.Primary),
@@ -304,7 +312,7 @@ function gameRows(g) {
     btn('g:high:' + g.id, g.closeRanges.high[0] + ' - ' + g.closeRanges.high[1], ButtonStyle.Primary),
   )];
   if (g.status === 'playing' && g.mode === 'dice') return [new ActionRowBuilder().addComponents(
-    btn('g:roll:' + g.id, 'العب نردك', ButtonStyle.Success),
+    btn('g:roll:' + g.id, 'العب نردك', ButtonStyle.Primary),
   )];
   return [];
 }
@@ -406,42 +414,69 @@ async function gameButton(i, parts) {
   const g = db.games[id];
   if (!g) return ephemeral(i, 'هذا التحدي غير موجود أو انتهى.');
   const uid = i.user.id;
+  if (action === 'cancel' || action === 'dice' || action === 'close') {
+    if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
+    if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
+    if (action === 'cancel') {
+      g.status = 'cancelled';
+      await save();
+      return i.update({
+        content: '> تم إلغاء التحدي بنجاح ' + i.user.toString() + ' !\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||',
+        embeds: [],
+        components: [],
+      });
+    }
+    g.mode = action;
+    g.status = 'awaiting_accept';
+    g.expires = Date.now() + CFG.inviteMs;
+    const details = action === 'dice'
+      ? { name: '🎲 لعبة النرد:', value: '> يفوز الذي يحصل على أعلى مجموع من ثلاث مرات, التعادل ليس فوزا !' }
+      : { name: '📊 الرقم التقريبي:', value: '> في كل جولة سوف تحصل على رقم عشوائي, و انت عليك ان تحصل على نفس الرقم او اقل منه, الذي يحصل عليه يفوز, في حال الحصول على اعلى تعتبر خاسر, جولة واحدة لكل تحدي ! انهاء الجولة يعني انهاء التحدي, التعادل ليس فوزا !' };
+    const waiting = new EmbedBuilder()
+      .setColor(0x000000)
+      .setDescription('> تنبيه: في حال عدم استجابة الطرفين و عدم اكمال التحدي يؤدي الى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب اي مبلغ من الطرفين.')
+      .addFields(details, { name: 'المبلغ:', value: fmt(g.bet) });
+    await save();
+    return i.update({
+      content: '> بانتظار رد من <@' + g.p2 + '> ...',
+      embeds: [waiting],
+      components: gameRows(g),
+    });
+  }
   if (action === 'accept' || action === 'decline') {
-    if (g.status !== 'pending') return ephemeral(i, 'تم التعامل مع التحدي مسبقاً.');
+    if (g.status !== 'awaiting_accept') return ephemeral(i, 'تم التعامل مع التحدي مسبقاً.');
     if (uid !== g.p2) return ephemeral(i, 'هذا التحدي موجّه للاعب الآخر فقط.');
     if (action === 'decline') {
       g.status = 'declined';
       await save();
-      return i.update({ embeds: [makeEmbed('تم رفض التحدي', i.user.toString() + ' رفض التحدي.')], components: [] });
+      return i.update({
+        content: '> تم رفض التحدي بنجاح ' + i.user.toString() + ' !\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||',
+        embeds: [],
+        components: [],
+      });
     }
     if (active(g.p1, g.id) || active(g.p2, g.id)) return ephemeral(i, 'أحد اللاعبين دخل تحدياً آخر.');
     if (account(g.p1).coins < g.bet || account(g.p2).coins < g.bet) return ephemeral(i, 'رصيد أحد اللاعبين لم يعد كافياً.');
     account(g.p1).coins -= g.bet;
     account(g.p2).coins -= g.bet;
     g.escrow = true;
-    g.status = 'selecting';
-    g.expires = Date.now() + CFG.gameMs;
-    await save();
-    return i.update({ embeds: [makeEmbed('اختيار اللعبة', 'تم حجز الرهان من الطرفين. اختاروا نوع اللعبة:')], components: gameRows(g) });
-  }
-  if (action === 'dice' || action === 'close') {
-    if (g.status !== 'selecting') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
-    if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'هذا التحدي ليس لك.');
-    g.mode = action;
     g.status = 'playing';
-    g.rolls = {};
     g.expires = Date.now() + CFG.gameMs;
-    if (action === 'close') {
-      initializeApproximateGame(g);
-      await save();
-      return i.update({
-        content: '<@' + g.closeTurn + '>\n انه دورك',
-        embeds: [legacyCloseEmbed(g)],
-        components: gameRows(g),
-      });
-    }
+    g.rolls = {};
+    if (g.mode === 'close') initializeApproximateGame(g);
+    else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
     await save();
-    return i.update({ embeds: [makeEmbed('لعبة النرد', 'كل لاعب يرمي مرة واحدة، والرقم الأعلى يفوز.\nالرهان: **' + fmt(g.bet) + '** لكل لاعب.')], components: gameRows(g) });
+    const gameEmbed = g.mode === 'close' ? legacyCloseEmbed(g) : legacyGameEmbed(g);
+    await i.update({
+      content: '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\n اصبح دورك',
+      embeds: [gameEmbed],
+      components: gameRows(g),
+    });
+    await i.followUp({
+      content: '> لقد تم القبول اللعبة هي : `' + (g.mode === 'dice' ? 'نرد' : 'الرقم التقريبي') + '` ، اللعب مع : <@' + g.p1 + '> !!',
+      ephemeral: true,
+    }).catch(() => {});
+    return;
   }
   if (['low', 'high', 'finish'].includes(action)) {
     if (g.status !== 'playing' || g.mode !== 'close') return ephemeral(i, 'لعبة الرقم التقريبي غير نشطة.');
@@ -481,12 +516,15 @@ async function gameButton(i, parts) {
     if (g.status !== 'playing') return ephemeral(i, 'اللعبة ليست في مرحلة اللعب.');
     if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'أنت لست أحد لاعبي هذا التحدي.');
     if (g.rolls[uid] !== undefined) return ephemeral(i, 'لقد لعبت دورك بالفعل.');
-    g.rolls[uid] = g.mode === 'dice' ? crypto.randomInt(1, 7) : crypto.randomInt(1, 101);
+    if (g.turn && g.turn !== uid) return ephemeral(i, 'ليس دورك الآن.');
+    g.rolls[uid] = crypto.randomInt(1, 7);
     await save();
     if (g.rolls[g.p1] === undefined || g.rolls[g.p2] === undefined) {
-      const nextPlayer = g.rolls[g.p1] === undefined ? g.p1 : g.p2;
-      const waitingEmbed = g.mode === 'dice' ? legacyGameEmbed(g) : legacyCloseEmbed(g);
-      return i.update({ content: '<@' + nextPlayer + '>\n اصبح دورك', embeds: [waitingEmbed], components: gameRows(g) });
+      const nextPlayer = uid === g.p1 ? g.p2 : g.p1;
+      g.turn = nextPlayer;
+      g.expires = Date.now() + CFG.gameMs;
+      await save();
+      return i.update({ content: '<@' + nextPlayer + '>\n اصبح دورك', embeds: [legacyGameEmbed(g)], components: gameRows(g) });
     }
     const a = g.rolls[g.p1], b = g.rolls[g.p2];
     let winner = null;
