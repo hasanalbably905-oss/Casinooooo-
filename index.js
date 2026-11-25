@@ -17,7 +17,7 @@ const CFG = {
   requestsRoom: process.env.WITHDRAW_REQUESTS_CHANNEL_ID || '1575119873875517540',
   admins: (process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean),
   probotId: process.env.PROBOT_ID || '282859044593598464',
-  probotOwners: (process.env.PROBOT_OWNER_IDS || process.env.OWNER_ID || '1483368871032520704').split(',').map(x => x.trim()).filter(Boolean),
+  probotOwners: (process.env.PROBOT_OWNER_IDS || '992561603046293596').split(',').map(x => x.trim()).filter(Boolean),
   minWithdraw: 4000000, maxWithdraw: 10000000000, fee: 0.04,
   inviteMs: 120000, gameMs: 600000,
 };
