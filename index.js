@@ -160,7 +160,12 @@ function save() {
     const temp = FILE + '.tmp';
     await fs.promises.writeFile(temp, content, 'utf8');
     await fs.promises.rename(temp, FILE);
-    await pushGitHubData(content);
+    try {
+      await pushGitHubData(content);
+    } catch (error) {
+      // Keep casino commands working and preserve the local file if GitHub is unavailable.
+      console.error('GitHub backup failed; local data was saved:', error);
+    }
   });
   writeChain = operation;
   return operation;
@@ -171,6 +176,18 @@ function account(id) {
   const n = Number(db.users[key].coins);
   db.users[key].coins = Number.isSafeInteger(n) && n >= 0 ? n : 0;
   return db.users[key];
+}
+function recordMember(member) {
+  const data = account(member.id);
+  const user = member.user || member;
+  data.username = user.username || data.username || String(member.id);
+  data.tag = user.tag || data.tag || data.username;
+  data.guildId = member.guild ? member.guild.id : CFG.guild;
+  data.isMember = true;
+  if (member.joinedTimestamp) data.joinedAt = member.joinedTimestamp;
+  data.lastSeenAt = Date.now();
+  delete data.leftAt;
+  return data;
 }
 function amountOf(input) {
   if (!input) return null;
@@ -307,7 +324,13 @@ async function targetUser(message, token) {
   return client.users.fetch(id).catch(() => null);
 }
 async function balance(message, user) {
-  const data = account(user.id);
+  const member = message.guild.members.cache.get(user.id) ||
+    (message.member && message.member.id === user.id ? message.member : null);
+  const data = member ? recordMember(member) : account(user.id);
+  data.username = user.username || data.username || String(user.id);
+  data.tag = user.tag || data.tag || data.username;
+  data.guildId = message.guild.id;
+  data.lastSeenAt = Date.now();
 
   const embed = new EmbedBuilder()
     .setColor('Gold')
@@ -793,6 +816,20 @@ async function withdrawalButton(i, parts) {
   }
 }
 
+client.on('guildMemberAdd', member => {
+  recordMember(member);
+  save().catch(error => console.error('Could not save new server member:', error));
+});
+client.on('guildMemberRemove', member => {
+  const data = account(member.id);
+  data.username = member.user.username || data.username || String(member.id);
+  data.tag = member.user.tag || data.tag || data.username;
+  data.guildId = member.guild.id;
+  data.isMember = false;
+  data.leftAt = Date.now();
+  save().catch(error => console.error('Could not save departed server member:', error));
+});
+
 client.on('messageCreate', async message => {
   if (!message.guild || message.author.bot) return;
   if (CFG.guild && message.guild.id !== CFG.guild) return;
@@ -857,6 +894,20 @@ client.on('interactionCreate', async i => {
 
 client.once('ready', async () => {
   console.log('Batoot Casino ready: ' + client.user.tag);
+  const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
+  if (guild) {
+    const members = await guild.members.fetch().catch(error => {
+      console.error('Could not fetch server members for GitHub records:', error);
+      return null;
+    });
+    if (members) {
+      for (const data of Object.values(db.users)) {
+        if (data && typeof data === 'object') data.isMember = false;
+      }
+      for (const member of members.values()) recordMember(member);
+      console.log('Prepared GitHub member records:', members.size);
+    }
+  }
   await save();
   await sweep().catch(console.error);
   setInterval(() => sweep().catch(console.error), 30000);
