@@ -579,6 +579,25 @@ async function withdrawalButton(i, parts) {
     ));
     return i.showModal(modal);
   }
+  if (parts[1] === 'rate') {
+    const req = db.withdrawals[parts[2]];
+    const rating = Number(parts[3]);
+    if (!req || req.status !== 'approved' || req.user !== i.user.id) {
+      return ephemeral(i, 'هذا التقييم غير متاح لهذا الحساب أو لطلب السحب.');
+    }
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return ephemeral(i, 'التقييم غير صالح.');
+    if (req.rating) return ephemeral(i, 'تم تسجيل تقييمك لهذا الطلب مسبقاً، شكراً لك! ❤️');
+    req.rating = rating;
+    req.ratedAt = Date.now();
+    await save();
+    const stars = '⭐'.repeat(rating);
+    const ratedEmbed = EmbedBuilder.from(i.message.embeds[0])
+      .setDescription(
+        (i.message.embeds[0].description || '') +
+        '\\n\\n✅ **تم استلام تقييمك: ' + stars + ' (' + rating + '/5)**\\nشكراً لمشاركتك رأيك، نسعد بخدمتك دائماً. 💚'
+      );
+    return i.update({ embeds: [ratedEmbed], components: [] });
+  }
   const req = db.withdrawals[parts[2]];
   if (!req || req.status !== 'pending') return ephemeral(i, 'تمت معالجة هذا الطلب مسبقاً أو أنه غير موجود.');
   if (!admin(i.user.id)) return ephemeral(i, 'قبول ورفض الطلبات للأونر والإدارة فقط.');
@@ -596,7 +615,43 @@ async function withdrawalButton(i, parts) {
     '\nبواسطة: ' + i.user.toString();
   await i.update({ embeds: [makeEmbed('تحديث طلب السحب', text)], components: [] });
   const user = await client.users.fetch(req.user).catch(() => null);
-  if (user) await user.send((req.status === 'approved' ? 'تمت الموافقة على طلب السحب، والتسليم إن وجد يتم يدوياً من الإدارة.' : 'تم رفض طلب السحب وإرجاع الرصيد.') + ' المبلغ: ' + fmt(req.amount)).catch(() => {});
+  if (user && req.status === 'approved') {
+    const dmEmbed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle('✅ تمت الموافقة على طلب السحب')
+      .setDescription(
+        'عزيزي العضو، نود إعلامك بأنه تمت الموافقة على طلب السحب الخاص بك بنجاح.\\n\\n' +
+        '💰 **المبلغ المعتمد:** ' + fmt(req.amount) + ' كوين\\n' +
+        '📦 **حالة التسليم:** التسليم — إن وجد — يتم يدوياً من قِبل الإدارة.\\n\\n' +
+        '⭐ نرجو منك تقييم تجربتك مع خدمة السحب بالضغط على أحد الخيارات أدناه.'
+      )
+      .setFooter({ text: 'Batoot Casino • خدمة السحب' })
+      .setTimestamp();
+    const ratingRow = new ActionRowBuilder().addComponents(
+      btn('w:rate:' + req.id + ':1', '⭐ 1', ButtonStyle.Secondary),
+      btn('w:rate:' + req.id + ':2', '⭐ 2', ButtonStyle.Secondary),
+      btn('w:rate:' + req.id + ':3', '⭐ 3', ButtonStyle.Secondary),
+      btn('w:rate:' + req.id + ':4', '⭐ 4', ButtonStyle.Secondary),
+      btn('w:rate:' + req.id + ':5', '⭐ 5', ButtonStyle.Success),
+    );
+    await user.send({ embeds: [dmEmbed], components: [ratingRow] }).catch(err => {
+      console.warn('Could not DM withdrawal approval:', err.message);
+    });
+  } else if (user) {
+    const dmEmbed = new EmbedBuilder()
+      .setColor(0xed4245)
+      .setTitle('❌ تم رفض طلب السحب')
+      .setDescription(
+        'نأسف لإبلاغك بأنه تم رفض طلب السحب الخاص بك.\\n' +
+        '💰 **المبلغ المُعاد إلى رصيدك:** ' + fmt(req.amount) + ' كوين\\n' +
+        'تمت إعادة المبلغ إلى محفظتك داخل البوت.'
+      )
+      .setFooter({ text: 'Batoot Casino • خدمة السحب' })
+      .setTimestamp();
+    await user.send({ embeds: [dmEmbed] }).catch(err => {
+      console.warn('Could not DM withdrawal rejection:', err.message);
+    });
+  }
 }
 
 client.on('messageCreate', async message => {
