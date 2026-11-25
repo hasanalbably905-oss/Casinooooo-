@@ -75,7 +75,7 @@ function amountOf(input) {
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
 const admin = id => String(id) === CFG.owner || CFG.admins.includes(String(id));
 function active(id, excludeId) {
-  return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
+  return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
 }
 const makeEmbed = (title, description) => new EmbedBuilder().setColor(0x30343b).setTitle(title).setDescription(description || '').setFooter({ text: 'Batoot Casino' }).setTimestamp();
 const btn = (id, label, style) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
