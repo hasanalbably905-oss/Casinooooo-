@@ -209,7 +209,7 @@ function legacyGameEmbed(g) {
 function legacyCloseEmbed(g) {
   return new EmbedBuilder()
     .setColor(0x000000)
-    .setDescription('> تنبيه: في حال عدم استجابة الطرفين وعدم إكمال التحدي يؤدي إلى خصم نصف المبلغ من الطرفين.\\n> عند التعادل لا يتم سحب أي مبلغ من الطرفين.')
+    .setDescription('> تنبيه: في حال عدم استجابة الطرفين وعدم إكمال التحدي يؤدي إلى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب أي مبلغ من الطرفين.')
     .addFields(
       { name: '📊 لعبة الرقم التقريبي:', value: '> في كل جولة سوف تحصل على رقم عشوائي، وعليك أن تحصل على نفس الرقم أو أقل منه؛ الذي يحصل عليه يفوز، وفي حال الحصول على أعلى تعتبر خاسر. جولة واحدة لكل تحدٍ! إنهاء الجولة يعني إنهاء التحدي، والتعادل ليس فوزاً!' },
       { name: 'المبلغ:', value: String(g.bet) },
@@ -317,7 +317,7 @@ async function gameButton(i, parts) {
     if (g.rolls[g.p1] === undefined || g.rolls[g.p2] === undefined) {
       const nextPlayer = g.rolls[g.p1] === undefined ? g.p1 : g.p2;
       const waitingEmbed = g.mode === 'dice' ? legacyGameEmbed(g) : legacyCloseEmbed(g);
-      return i.update({ content: '<@' + nextPlayer + '>\\n اصبح دورك', embeds: [waitingEmbed], components: gameRows(g) });
+      return i.update({ content: '<@' + nextPlayer + '>\n اصبح دورك', embeds: [waitingEmbed], components: gameRows(g) });
     }
     const a = g.rolls[g.p1], b = g.rolls[g.p2];
     let winner = null;
