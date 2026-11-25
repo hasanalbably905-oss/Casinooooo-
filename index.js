@@ -338,12 +338,23 @@ async function settle(g, winner, result) {
   if (!g || g.status !== 'playing') return;
   g.status = 'finished';
   if (winner) {
+    const loser = winner === g.p1 ? g.p2 : g.p1;
     const fee = Math.floor(g.bet * CFG.fee);
-    const payout = g.mode === 'close'
-      ? (g.bet * 2 - fee)
-      : (g.bet * 2 - Math.floor(g.bet * 2 * CFG.fee));
+    const payout = g.bet * 2 - fee;
+    const winnerScore = g.mode === 'close'
+      ? Number((g.closeSums && g.closeSums[winner]) || 0)
+      : Number((g.rolls && g.rolls[winner]) || 0);
+    const loserScore = g.mode === 'close'
+      ? Number((g.closeSums && g.closeSums[loser]) || 0)
+      : Number((g.rolls && g.rolls[loser]) || 0);
     account(winner).coins += payout;
-    g.result = result + '\nالفائز: <@' + winner + '> — الجائزة: **' + fmt(payout) + '** بعد الرسوم.';
+    if (g.mode === 'dice') {
+      g.result = '**<@' + winner + '>** فائززززز !!! ب مجموع **' + winnerScore + '** الي يفوز فيه نقطة!\n\n' +
+        '**<@' + loser + '>** خاسر ب مجموع **' + loserScore + '** نقطة!\n> اللعبة: **النرد**, المبلغ: **' + g.bet + '**';
+    } else {
+      g.result = '<@' + winner + '>  فائززززز !!! ب مجموع ' + winnerScore + ' نقطة!\n\n' +
+        '<@' + loser + '> خاسر ب مجموع **' + loserScore + '** نقطة!\nاللعبة: **الرقم التقريبي**, المبلغ: **' + fmt(g.bet) + '**';
+    }
   } else {
     account(g.p1).coins += g.bet;
     account(g.p2).coins += g.bet;
