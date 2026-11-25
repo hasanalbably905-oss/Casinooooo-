@@ -350,7 +350,7 @@ async function settle(g, winner, result) {
     account(winner).coins += payout;
     if (g.mode === 'dice') {
       g.result = '**<@' + winner + '>** فائززززز !!! ب مجموع **' + winnerScore + '** الي يفوز فيه نقطة!\n\n' +
-        '**<@' + loser + '>** خاسر ب مجموع **' + loserScore + '** نقطة!\n> اللعبة: **النرد**, المبلغ: **' + g.bet + '**';
+        '**<@' + loser + '>** خاسر ب مجموع **' + loserScore + '** نقطة!\n> اللعبة: **النرد**, المبلغ: **' + fmt(g.bet) + '**';
     } else {
       g.result = '<@' + winner + '>  فائززززز !!! ب مجموع ' + winnerScore + ' نقطة!\n\n' +
         '<@' + loser + '> خاسر ب مجموع **' + loserScore + '** نقطة!\nاللعبة: **الرقم التقريبي**, المبلغ: **' + fmt(g.bet) + '**';
