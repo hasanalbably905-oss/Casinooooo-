@@ -72,8 +72,8 @@ function amountOf(input) {
 }
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
 const admin = id => String(id) === CFG.owner || CFG.admins.includes(String(id));
-function active(id) {
-  return Object.values(db.games).some(g => g && ['pending', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
+function active(id, excludeId) {
+  return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
 }
 const makeEmbed = (title, description) => new EmbedBuilder().setColor(0x30343b).setTitle(title).setDescription(description || '').setFooter({ text: 'Batoot Casino' }).setTimestamp();
 const btn = (id, label, style) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
@@ -200,7 +200,7 @@ async function gameButton(i, parts) {
       await save();
       return i.update({ embeds: [makeEmbed('تم رفض التحدي', i.user.toString() + ' رفض التحدي.')], components: [] });
     }
-    if (active(g.p1) || active(g.p2)) return ephemeral(i, 'أحد اللاعبين دخل تحدياً آخر.');
+    if (active(g.p1, g.id) || active(g.p2, g.id)) return ephemeral(i, 'أحد اللاعبين دخل تحدياً آخر.');
     if (account(g.p1).coins < g.bet || account(g.p2).coins < g.bet) return ephemeral(i, 'رصيد أحد اللاعبين لم يعد كافياً.');
     account(g.p1).coins -= g.bet;
     account(g.p2).coins -= g.bet;
