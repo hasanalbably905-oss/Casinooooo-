@@ -26,8 +26,10 @@ const DIR = path.join(__dirname, 'data');
 const FILE = path.join(DIR, 'store.json');
 fs.mkdirSync(DIR, { recursive: true });
 
-// Persistent balance storage in a separate GitHub branch.
-// Keep this branch different from main: EuizHost auto-deploys pushes to main.
+/*
+ * GitHub backup is separate from main so data commits never trigger a bot redeploy.
+ * Required EuizHost variable: GITHUB_TOKEN (Contents: Read and write).
+ */
 const GH_REPO = process.env.GITHUB_REPOSITORY || 'hasanalbably905-oss/Casinooooo-';
 const GH_BRANCH = process.env.GITHUB_DATA_BRANCH || 'bot-data';
 const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
@@ -35,31 +37,8 @@ const GH_FILE_PATH = 'data/store.json';
 let githubFileSha = null;
 let githubDataBlocked = false;
 
-function readJson(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
-}
-function importOldUsers() {
-  const paths = [path.join(DIR, 'databaseusers.json'), path.join(__dirname, 'db.json')];
-  for (const file of paths) {
-    const rows = readJson(file, []);
-    if (!Array.isArray(rows) || !rows.length) continue;
-    const users = {};
-    for (const row of rows) {
-      if (!row || !row.id) continue;
-      const coins = Number(row.coins);
-      users[String(row.id)] = { coins: Number.isSafeInteger(coins) && coins > 0 ? coins : 0 };
-    }
-    if (Object.keys(users).length) return users;
-  }
-  return {};
-}
-const old = readJson(FILE, null);
-const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {} }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {} };
-
 function githubRequest(method, apiPath, payload) {
-  if (!GH_TOKEN) return Promise.reject(new Error('Missing GITHUB_TOKEN (or GH_TOKEN) environment variable.'));
+  if (!GH_TOKEN) return Promise.reject(new Error('Missing GITHUB_TOKEN environment variable.'));
   return new Promise((resolve, reject) => {
     const body = payload ? JSON.stringify(payload) : null;
     const req = https.request({
@@ -96,15 +75,15 @@ function githubRequest(method, apiPath, payload) {
 const githubContentPath = '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH + '?ref=' + encodeURIComponent(GH_BRANCH);
 async function loadGitHubData() {
   if (!GH_TOKEN) {
-    console.warn('GitHub data backup is not active: add GITHUB_TOKEN to EuizHost environment variables.');
+    console.warn('GitHub backup disabled: GITHUB_TOKEN is not configured.');
     return false;
   }
   try {
     const remote = await githubRequest('GET', githubContentPath);
-    if (!remote.content || !remote.sha) throw new Error('GitHub data file is missing content or SHA.');
-    const parsed = JSON.parse(Buffer.from(remote.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+    if (!remote.content || !remote.sha) throw new Error('GitHub data file has no content or SHA.');
+    const parsed = JSON.parse(Buffer.from(remote.content.replace(/\\s/g, ''), 'base64').toString('utf8'));
     if (!parsed || typeof parsed !== 'object' || !parsed.users || typeof parsed.users !== 'object') {
-      throw new Error('GitHub data file has an invalid format; refusing to overwrite it.');
+      throw new Error('Invalid GitHub data format; refusing to overwrite data.');
     }
     db.users = parsed.users;
     db.games = parsed.games || {};
@@ -112,24 +91,23 @@ async function loadGitHubData() {
     db.processedTransfers = parsed.processedTransfers || {};
     githubFileSha = remote.sha;
     await fs.promises.writeFile(FILE, JSON.stringify(db, null, 2), 'utf8');
-    console.log('Loaded member balances from private GitHub data branch.');
+    console.log('Loaded casino data from GitHub.');
     return true;
   } catch (error) {
     if (error.statusCode === 404) {
-      console.log('No GitHub backup exists yet; the current local balances will be uploaded on first save.');
+      console.log('No GitHub backup exists yet; local data will be uploaded on first save.');
       return false;
     }
     githubDataBlocked = true;
-    console.error('Could not load GitHub balance backup; remote writes are disabled to protect existing data:', error);
+    console.error('GitHub read failed; remote writes disabled to protect existing data:', error);
     return false;
   }
 }
 
 async function pushGitHubData(content) {
-  if (!GH_TOKEN) return;
-  if (githubDataBlocked) throw new Error('GitHub backup is blocked because its existing data could not be safely loaded.');
+  if (!GH_TOKEN || githubDataBlocked) return;
   const payload = {
-    message: 'Save casino balances and bot data',
+    message: 'Update Batoot Casino data',
     content: Buffer.from(content, 'utf8').toString('base64'),
     ...(githubFileSha ? { sha: githubFileSha } : {}),
     branch: GH_BRANCH,
@@ -138,20 +116,42 @@ async function pushGitHubData(content) {
     const result = await githubRequest('PUT', '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH, payload);
     githubFileSha = result.content && result.content.sha ? result.content.sha : githubFileSha;
   } catch (error) {
-    // Recover from a stale content SHA once, without force-overwriting newer data.
     if (error.statusCode !== 409 && error.statusCode !== 422) throw error;
     const latest = await githubRequest('GET', githubContentPath);
     if (!latest.sha) throw error;
-    githubFileSha = latest.sha;
     const retry = await githubRequest('PUT', '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH, {
-      message: 'Save casino balances and bot data',
+      message: 'Update Batoot Casino data',
       content: Buffer.from(content, 'utf8').toString('base64'),
-      sha: githubFileSha,
+      sha: latest.sha,
       branch: GH_BRANCH,
     });
-    githubFileSha = retry.content && retry.content.sha ? retry.content.sha : githubFileSha;
+    githubFileSha = retry.content && retry.content.sha ? retry.content.sha : latest.sha;
   }
 }
+
+
+function readJson(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+}
+function importOldUsers() {
+  const paths = [path.join(DIR, 'databaseusers.json'), path.join(__dirname, 'db.json')];
+  for (const file of paths) {
+    const rows = readJson(file, []);
+    if (!Array.isArray(rows) || !rows.length) continue;
+    const users = {};
+    for (const row of rows) {
+      if (!row || !row.id) continue;
+      const coins = Number(row.coins);
+      users[String(row.id)] = { coins: Number.isSafeInteger(coins) && coins > 0 ? coins : 0 };
+    }
+    if (Object.keys(users).length) return users;
+  }
+  return {};
+}
+const old = readJson(FILE, null);
+const db = old && typeof old === 'object'
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {} }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {} };
 
 let writeChain = Promise.resolve();
 function save() {
@@ -163,8 +163,8 @@ function save() {
     try {
       await pushGitHubData(content);
     } catch (error) {
-      // Keep casino commands working and preserve the local file if GitHub is unavailable.
-      console.error('GitHub backup failed; local data was saved:', error);
+      // Local storage is always kept; GitHub failures must not break casino commands.
+      console.error('GitHub backup failed; local data is safe:', error);
     }
   });
   writeChain = operation;
@@ -172,9 +172,10 @@ function save() {
 }
 function account(id) {
   const key = String(id);
-  if (!db.users[key]) db.users[key] = { coins: 0 };
+  if (!db.users[key]) db.users[key] = { id: key, coins: 0 };
   const n = Number(db.users[key].coins);
   db.users[key].coins = Number.isSafeInteger(n) && n >= 0 ? n : 0;
+  db.users[key].id = key;
   return db.users[key];
 }
 function recordMember(member) {
@@ -324,26 +325,24 @@ async function targetUser(message, token) {
   return client.users.fetch(id).catch(() => null);
 }
 async function balance(message, user) {
-  const member = message.guild.members.cache.get(user.id) ||
-    (message.member && message.member.id === user.id ? message.member : null);
+  const member = message.guild.members.cache.get(user.id);
   const data = member ? recordMember(member) : account(user.id);
   data.username = user.username || data.username || String(user.id);
   data.tag = user.tag || data.tag || data.username;
   data.guildId = message.guild.id;
   data.lastSeenAt = Date.now();
+  await save();
 
+  // Keep the original balance command appearance and reply behavior.
   const embed = new EmbedBuilder()
     .setColor('Gold')
     .setThumbnail(user.displayAvatarURL({ forceStatic: false }))
     .setTitle('الرصيد الحالي لـ ' + user.username)
-    .setDescription('**' + fmt(data.coins) + ' كوين**')
+    .setDescription('**' + String(data.coins) + ' كوين**')
     .setFooter({ text: message.guild.name })
     .setTimestamp();
 
-  // Reply immediately; a GitHub backup failure must not silence the balance command.
-  const sent = await message.reply({ embeds: [embed] });
-  save().catch(error => console.error('Balance backup save failed:', error));
-  return sent;
+  return message.reply({ embeds: [embed] });
 }
 function legacyAdminAmount(input) {
   if (!input) return { error: 'missing' };
@@ -818,7 +817,7 @@ async function withdrawalButton(i, parts) {
 
 client.on('guildMemberAdd', member => {
   recordMember(member);
-  save().catch(error => console.error('Could not save new server member:', error));
+  save().catch(error => console.error('Could not save new member:', error));
 });
 client.on('guildMemberRemove', member => {
   const data = account(member.id);
@@ -827,7 +826,7 @@ client.on('guildMemberRemove', member => {
   data.guildId = member.guild.id;
   data.isMember = false;
   data.leftAt = Date.now();
-  save().catch(error => console.error('Could not save departed server member:', error));
+  save().catch(error => console.error('Could not save departed member:', error));
 });
 
 client.on('messageCreate', async message => {
@@ -897,15 +896,13 @@ client.once('ready', async () => {
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
   if (guild) {
     const members = await guild.members.fetch().catch(error => {
-      console.error('Could not fetch server members for GitHub records:', error);
+      console.error('Could not fetch server members; check Server Members Intent:', error);
       return null;
     });
     if (members) {
-      for (const data of Object.values(db.users)) {
-        if (data && typeof data === 'object') data.isMember = false;
-      }
+      for (const data of Object.values(db.users)) if (data && typeof data === 'object') data.isMember = false;
       for (const member of members.values()) recordMember(member);
-      console.log('Prepared GitHub member records:', members.size);
+      console.log('Member records refreshed:', members.size);
     }
   }
   await save();
@@ -919,15 +916,9 @@ if (!process.env.DISCORD_TOKEN) {
   console.error('Missing DISCORD_TOKEN environment variable.');
   process.exit(1);
 }
-if (!process.env.DISCORD_TOKEN) {
-  console.error('Missing DISCORD_TOKEN environment variable.');
-  process.exit(1);
-}
-
-// Load the last committed balances before connecting to Discord.
 (async () => {
   await loadGitHubData();
-  client.login(process.env.DISCORD_TOKEN);
+  await client.login(process.env.DISCORD_TOKEN);
 })().catch(error => {
   console.error('Startup storage error:', error);
   client.login(process.env.DISCORD_TOKEN);
