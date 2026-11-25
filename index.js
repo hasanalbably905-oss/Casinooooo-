@@ -594,7 +594,7 @@ async function withdrawalButton(i, parts) {
     const ratedEmbed = EmbedBuilder.from(i.message.embeds[0])
       .setDescription(
         (i.message.embeds[0].description || '') +
-        '\\n\\n✅ **تم استلام تقييمك: ' + stars + ' (' + rating + '/5)**\\nشكراً لمشاركتك رأيك، نسعد بخدمتك دائماً. 💚'
+        '\n\n✅ **تم استلام تقييمك: ' + stars + ' (' + rating + '/5)**\nشكراً لمشاركتك رأيك، نسعد بخدمتك دائماً. 💚'
       );
     return i.update({ embeds: [ratedEmbed], components: [] });
   }
@@ -620,9 +620,9 @@ async function withdrawalButton(i, parts) {
       .setColor(0x57f287)
       .setTitle('✅ تمت الموافقة على طلب السحب')
       .setDescription(
-        'عزيزي العضو، نود إعلامك بأنه تمت الموافقة على طلب السحب الخاص بك بنجاح.\\n\\n' +
-        '💰 **المبلغ المعتمد:** ' + fmt(req.amount) + ' كوين\\n' +
-        '📦 **حالة التسليم:** التسليم — إن وجد — يتم يدوياً من قِبل الإدارة.\\n\\n' +
+        'عزيزي العضو، نود إعلامك بأنه تمت الموافقة على طلب السحب الخاص بك بنجاح.\n\n' +
+        '💰 **المبلغ المعتمد:** ' + fmt(req.amount) + ' كوين\n' +
+        '📦 **حالة التسليم:** التسليم — إن وجد — يتم يدوياً من قِبل الإدارة.\n\n' +
         '⭐ نرجو منك تقييم تجربتك مع خدمة السحب بالضغط على أحد الخيارات أدناه.'
       )
       .setFooter({ text: 'Batoot Casino • خدمة السحب' })
@@ -642,8 +642,8 @@ async function withdrawalButton(i, parts) {
       .setColor(0xed4245)
       .setTitle('❌ تم رفض طلب السحب')
       .setDescription(
-        'نأسف لإبلاغك بأنه تم رفض طلب السحب الخاص بك.\\n' +
-        '💰 **المبلغ المُعاد إلى رصيدك:** ' + fmt(req.amount) + ' كوين\\n' +
+        'نأسف لإبلاغك بأنه تم رفض طلب السحب الخاص بك.\n' +
+        '💰 **المبلغ المُعاد إلى رصيدك:** ' + fmt(req.amount) + ' كوين\n' +
         'تمت إعادة المبلغ إلى محفظتك داخل البوت.'
       )
       .setFooter({ text: 'Batoot Casino • خدمة السحب' })
