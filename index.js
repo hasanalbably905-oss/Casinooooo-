@@ -16,9 +16,14 @@ const { handleGoldenExtras } = require('./golden-extras');
 const { rpsWinner, xoWinner, xoIsDraw } = require('./golden-game-rules');
 
 const CFG = {
+  owners: (process.env.OWNER_IDS || '1483368871032520704,1244772188662403176,1071915968521056377').split(',').map(x => x.trim()).filter(Boolean),
   owner: process.env.OWNER_ID || '1483368871032520704',
+  creditRecipient: process.env.CREDIT_RECIPIENT_ID || '1483368871032520704',
   guild: process.env.GUILD_ID || '1501507950492127234',
-  gameRooms: (process.env.GAME_CHANNEL_IDS || '1575119362363490455,1575119396232232990,1575119427349913630').split(',').map(x => x.trim()).filter(Boolean),
+  gameRooms: (process.env.GAME_CHANNEL_IDS || '1575119362363490455,1575119427349913630,1575119396232232990').split(',').map(x => x.trim()).filter(Boolean),
+  rentalRoom: process.env.RENTAL_ROOM_ID || '1575329123830730845',
+  tournamentRoom: process.env.TOURNAMENT_ROOM_ID || '1575330966472360016',
+  challengeRoom: process.env.CHALLENGE_ROOM_ID || '1575332710283747519',
   withdrawRoom: process.env.WITHDRAW_PANEL_CHANNEL_ID || '1575119654534381699',
   requestsRoom: process.env.WITHDRAW_REQUESTS_CHANNEL_ID || '1575119873875517540',
   admins: (process.env.ADMIN_IDS || '').split(',').map(x => x.trim()).filter(Boolean),
@@ -236,7 +241,7 @@ function amountOf(input) {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
-const admin = id => String(id) === CFG.owner || CFG.admins.includes(String(id));
+const admin = id => CFG.owners.includes(String(id)) || CFG.admins.includes(String(id));
 function active(id, excludeId) {
   return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
 }
@@ -259,7 +264,7 @@ client.probot = Probot(client, {
     guildId: CFG.guild,
     probotId: CFG.probotId,
     // Credits are accepted only when sent to the configured bot owner account.
-    owners: [CFG.owner],
+    owners: [CFG.creditRecipient],
   }],
 });
 
@@ -866,6 +871,8 @@ async function adminBalance(message, args, add) {
 }
 async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
+  const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
+  if (!challengeChannel || !challengeChannel.isTextBased()) return message.reply('روم عرض التحديات غير متاح حالياً.');
   const preference = String(args[1] || '').toLowerCase();
   if (['عام', 'فرندز'].includes(preference)) {
     const data = account(message.author.id);
@@ -895,7 +902,7 @@ async function challenge(message, args) {
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   const g = db.games[id] = {
     id, p1: message.author.id, p2: user.id, bet, status: 'pending',
-    escrow: false, channel: message.channel.id, message: null, mode: null,
+    escrow: false, channel: challengeChannel.id, message: null, mode: null,
     expires: Date.now() + CFG.inviteMs, created: Date.now(),
   };
   const embed = new EmbedBuilder()
@@ -909,7 +916,7 @@ async function challenge(message, args) {
       { name: 'أكس أو ❌', value: '> أكمل ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.' },
       { name: 'حجرة ورقة مقص ✂️', value: '> يختار كل لاعب سراً ثم تتم مقارنة الاختيارين.' },
     );
-  const sent = await message.reply({ embeds: [embed], components: gameRows(g), allowedMentions: { repliedUser: false } }).catch(() => null);
+  const sent = await challengeChannel.send({ content: message.author.toString(), embeds: [embed], components: gameRows(g), allowedMentions: { users: [message.author.id] } }).catch(() => null);
   if (!sent) { delete db.games[id]; return message.reply('تعذر إرسال التحدي.'); }
   g.message = sent.id;
   await save();
@@ -1526,7 +1533,7 @@ client.on('messageCreate', async message => {
     if (await handleGoldenUtilities(message, { isAdmin: admin })) return;
     if (await handleGoldenExtras(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305', suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID || '1504204169991426341' })) return;
     if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305' })) return;
-    if (await handleGoldenCatalog(message, { ownerId: CFG.owner })) return;
+    if (await handleGoldenCatalog(message, { ownerId: CFG.owner, ownerIds: CFG.owners })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
     if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
     if (cmd === 'إيداع' || cmd === 'ايداع') {
@@ -1539,7 +1546,7 @@ client.on('messageCreate', async message => {
     if (cmd === 'شحن') {
       const parsed = legacyAdminAmount(args[1]);
       if (parsed.error) return message.reply('❎ **صيغة الشحن غير صحيحة**\nمثال: `شحن 10m`');
-      return message.channel.send('#credit ' + CFG.owner + ' ' + String(parsed.value));
+      return message.channel.send('#credit ' + CFG.creditRecipient + ' ' + String(parsed.value));
     }
     if (cmd === 'withdraw' && message.channel.id === CFG.withdrawRoom) return message.channel.send(withdrawPanel());
     if (['فلوس', 'money', 'رصيدي', 'balance'].includes(cmd)) return balance(message, message.mentions.users.first() || message.author);
@@ -1611,7 +1618,7 @@ client.on('messageCreate', async message => {
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
     if (cmd === 'setmoney') {
-      if (String(message.author.id) !== String(CFG.owner)) return message.reply('هذا الأمر للأونر فقط.');
+      if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
       const target = await targetUser(message, args[1]);
       const amount = amountOf(args[2]);
       if (!target || !amount) return message.reply('الاستخدام: `setmoney @عضو 500k`');
