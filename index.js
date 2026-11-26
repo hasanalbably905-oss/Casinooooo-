@@ -241,15 +241,52 @@ async function queueCreditReview(memberId, amount, guild, data, reason) {
   await save();
   const channel = await client.channels.fetch(CFG.requestsRoom).catch(() => null);
   if (channel && channel.isTextBased()) {
-    await channel.send({
-      embeds: [makeEmbed('مراجعة شحن مطلوبة', 'تعذر التحقق آلياً من رقم عملية فريد أو من إمكانية إضافة المبلغ بأمان.\n\nالعضو: <@' + memberId + '>\nالمبلغ: **' + fmt(amount) + '**\nالسبب: ' + reason + '\nرقم المراجعة: `' + id + '`')],
+    const msg = await channel.send({
+      embeds: [makeEmbed('مراجعة شحن مطلوبة', 'تعذر التحقق آلياً من رقم عملية فريد أو من إمكانية إضافة المبلغ بأمان.\\n\\nالعضو: <@' + memberId + '>\\nالمبلغ: **' + fmt(amount) + '**\\nالسبب: ' + reason + '\\nرقم المراجعة: `' + id + '`')],
       components: [new ActionRowBuilder().addComponents(
         btn('c:approve:' + id, 'اعتماد الشحن', ButtonStyle.Success),
         btn('c:reject:' + id, 'رفض', ButtonStyle.Danger),
       )],
-    }).catch(err => console.error('Could not publish credit review:', err));
+    }).catch(err => {
+      console.error('Could not publish credit review:', err);
+      return null;
+    });
+    if (msg) {
+      review.message = msg.id;
+      review.messageChannel = channel.id;
+      await save();
+    }
   }
   return review;
+}
+async function recoverCreditReviews() {
+  const channel = await client.channels.fetch(CFG.requestsRoom).catch(() => null);
+  if (!channel || !channel.isTextBased()) {
+    console.error('Credit review recovery skipped: requests channel is unavailable.');
+    return;
+  }
+  for (const review of Object.values(db.creditReviews)) {
+    if (!review || review.status !== 'pending') continue;
+    if (review.message) {
+      const existing = await channel.messages.fetch(review.message).catch(() => null);
+      if (existing) continue;
+    }
+    const msg = await channel.send({
+      embeds: [makeEmbed('مراجعة شحن — استعادة تلقائية', 'العضو: <@' + review.memberId + '>\\nالمبلغ: **' + fmt(review.amount) + '**\\nالسبب: ' + review.reason + '\\nرقم المراجعة: `' + review.id + '`')],
+      components: [new ActionRowBuilder().addComponents(
+        btn('c:approve:' + review.id, 'اعتماد الشحن', ButtonStyle.Success),
+        btn('c:reject:' + review.id, 'رفض', ButtonStyle.Danger),
+      )],
+    }).catch(error => {
+      console.error('Could not restore credit review ' + review.id + ':', error);
+      return null;
+    });
+    if (msg) {
+      review.message = msg.id;
+      review.messageChannel = channel.id;
+      await save();
+    }
+  }
 }
 async function creditReviewButton(i, parts) {
   if (!admin(i.user.id)) return ephemeral(i, 'اعتماد عمليات الشحن للإدارة فقط.');
@@ -1202,6 +1239,7 @@ client.once('ready', async () => {
     }
   }
   await save();
+  await recoverCreditReviews().catch(console.error);
   await recoverWithdrawalRequests().catch(console.error);
   await sweep().catch(console.error);
   setInterval(() => sweep().catch(console.error), 30000);
