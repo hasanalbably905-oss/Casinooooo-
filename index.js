@@ -1512,6 +1512,7 @@ async function privateRoomCommand(message, args) {
     const member = await message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return message.reply('يجب أن يكون العضو في السيرفر.');
     await message.channel.permissionOverwrites.edit(user.id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+    current.addedMembers = Array.isArray(current.addedMembers) ? current.addedMembers : [];
     current.addedMembers.push(user.id);
     await save();
     return message.reply('✅ تمت إضافة ' + user + ' إلى الروم.');
@@ -2387,7 +2388,8 @@ client.on('messageCreate', async message => {
       if (!room || room.status !== 'active') return message.reply('هذا الأمر يعمل داخل روم خاصة نشطة فقط.');
       if (room.owner !== message.author.id && !CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر لصاحب الروم أو الأونرز فقط.');
       await expirePrivateRoom(room);
-      return message.reply('✅ تم إنهاء الروم وتحرير الحجز.');
+      await message.author.send('✅ تم إنهاء الروم الخاصة وتحرير الحجز.').catch(() => {});
+      return;
     }
     if (cmd === '!rooms' || cmd === 'الرومات') {
       if (!admin(message.author.id)) return message.reply('هذا الأمر للإدارة فقط.');
