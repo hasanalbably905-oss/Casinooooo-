@@ -2181,7 +2181,7 @@ function legacyCloseEmbed(g) {
     const status = done ? 'Done' : g.closeTurn === id ? '**Playing...**' : 'Waiting...';
     const remaining = g.approxMode === 'descending' ? Number((g.closeRemaining || {})[id] || 0) : Math.max(0, Number(g.closeMax || 0) - Number(total || 0));
     const visible = g.closeVisibility === 'show' || done || id === g.closeTurn;
-    const expression = nums.length && visible ? nums.join(' + ') + ' = **' + (g.approxMode === 'descending' ? Number(g.closeMax || 0) - remaining : total) + '**\\n0 (متبقي **' + remaining + '** )' : status + '\\n0 (متبقي **' + remaining + '** )';
+    const expression = nums.length && visible ? nums.join(' + ') + ' = **' + (g.approxMode === 'descending' ? Number(g.closeMax || 0) - remaining : total) + '**\n0 (متبقي **' + remaining + '** )' : status + '\n0 (متبقي **' + remaining + '** )';
     return { name: legacyPlayerTag(id), value: '> ' + expression };
   });
   return new EmbedBuilder()
@@ -2378,7 +2378,7 @@ async function sweep() {
     if (g.status === 'pending' || g.status === 'awaiting_accept') {
       g.status = 'expired';
       await editGame(g, 'انتهت صلاحية التحدي', 'لم يتم قبول التحدي خلال الوقت المحدد.', []);
-    } else if (g.status === 'selecting' || g.status === 'playing') {
+    } else if (g.status === 'selecting' || g.status === 'selecting_subtype' || g.status === 'playing') {
       await refund(g, 'انتهى الوقت؛ أُعيد الرهان للطرفين.');
     }
   }
@@ -2386,10 +2386,10 @@ async function sweep() {
 }
 function approximateModeEmbed(g) {
   const detail = g.status === 'selecting_subtype'
-    ? (g.approxMode === 'limit' ? '🎯 **الحد التقريبي - اختر النوع**\\nطبيعي: تظهر الأرقام بعد كل جولة بشكل عادي.\\nإظهار أرقام: يظهر مجموع كل لاعب في الإيمبد بشكل مستمر.' : g.approxMode === 'descending' ? '🔽 **الحد التنازلي - اختر النوع**\\nطبيعي: تبدأ من الرقم وتطرح بدون عرض أرقام المنافس.\\nإظهار أرقام: يظهر المتبقي لكل لاعب في الإيمبد بشكل مستمر.' : '🎯 **الحد الأبعد - اختر النوع**\\nطبيعي: تظهر الأرقام بعد كل جولة بشكل عادي.\\nإظهار أرقام: يظهر مجموع كل لاعب في الإيمبد بشكل مستمر.')
-    : '📋 إختر نوعية التحدي:\\n🔹 **بدون شروط**: اللعبة الأساسية بدون قيود إضافية.\\n🔸 **شروط**: اللعبة مع تحديات وقواعد إضافية.\\n🎯 **الحد التقريبي**: الأقرب للرقم يفوز (فوق أو تحت بدون تخطي).\\n🔽 **الحد التنازلي**: تبدأ من الرقم وتطرح — الأقرب للصفر يفوز.\\n🎯 **الحد الأبعد**: تجمع أرقام — الأبعد عن الهدف يفوز.';
+    ? (g.approxMode === 'limit' ? '🎯 **الحد التقريبي - اختر النوع**\nطبيعي: تظهر الأرقام بعد كل جولة بشكل عادي.\nإظهار أرقام: يظهر مجموع كل لاعب في الإيمبد بشكل مستمر.' : g.approxMode === 'descending' ? '🔽 **الحد التنازلي - اختر النوع**\nطبيعي: تبدأ من الرقم وتطرح بدون عرض أرقام المنافس.\nإظهار أرقام: يظهر المتبقي لكل لاعب في الإيمبد بشكل مستمر.' : '🎯 **الحد الأبعد - اختر النوع**\nطبيعي: تظهر الأرقام بعد كل جولة بشكل عادي.\nإظهار أرقام: يظهر مجموع كل لاعب في الإيمبد بشكل مستمر.')
+    : '📋 إختر نوعية التحدي:\n🔹 **بدون شروط**: اللعبة الأساسية بدون قيود إضافية.\n🔸 **شروط**: اللعبة مع تحديات وقواعد إضافية.\n🎯 **الحد التقريبي**: الأقرب للرقم يفوز (فوق أو تحت بدون تخطي).\n🔽 **الحد التنازلي**: تبدأ من الرقم وتطرح — الأقرب للصفر يفوز.\n🎯 **الحد الأبعد**: تجمع أرقام — الأبعد عن الهدف يفوز.';
   return new EmbedBuilder().setColor(0x5865f2).setTitle(g.status === 'selecting_subtype' ? '🎮 اختر النوع' : '🎮 إختيار نوعية التحدي')
-    .setDescription('> 👥 **المنافس:** <@' + g.p2 + '>\\n> 💰 **المبلغ المحدد:** `' + fmt(g.bet) + '`\\n\\n' + detail)
+    .setDescription('> 👥 **المنافس:** <@' + g.p2 + '>\n> 💰 **المبلغ المحدد:** `' + fmt(g.bet) + '`\n\n' + detail)
     .setFooter({ text: g.approxMode || 'يرجى إختيار نوعية التحدي المناسبة' });
 }
 function initializeApproximateGame(g) {
@@ -2428,10 +2428,10 @@ async function finishApproximateTurn(g, reason) {
   const bDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p2] : b) - (g.approxMode === 'descending' ? 0 : g.closeMax));
   const winner = aDiff === bDiff ? null : (g.approxMode === 'far' ? (aDiff > bDiff ? g.p1 : g.p2) : (aDiff < bDiff ? g.p1 : g.p2));
   const typeLabel = g.approxMode === 'descending' ? 'الحد التنازلي' : g.approxMode === 'far' ? 'الحد الأبعد' : g.approxMode === 'limit' && g.closeVisibility === 'show' ? 'الحد التقريبي (اظهار ارقام) 🔢' : 'الحد التقريبي الطبيعي 🏁';
-  const result = '** نتيجة اللعبة :**\\n\\n' +
-    (winner ? 'الـ ** فـآئز ** : <@' + winner + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? a : b) + '`\\n\\nالـ ** خـآسر ** : <@' + (winner === g.p1 ? g.p2 : g.p1) + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? b : a) + '`' : 'الـ ** تعادل ** : <@' + g.p1 + '> & <@' + g.p2 + '>') +
-    '\\n\\nالـ ** لعبة ** : الـ`' + typeLabel + '` .! `-` الـ **💰 - مبلغ** : `' + fmt(g.bet) + '` .!\\n' +
-    'الرقم المطلوب: **' + g.closeMax + '** • الفروق: ' + aDiff + ' / ' + bDiff + '\\n' +
+  const result = '** نتيجة اللعبة :**\n\n' +
+    (winner ? 'الـ ** فـآئز ** : <@' + winner + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? a : b) + '`\n\nالـ ** خـآسر ** : <@' + (winner === g.p1 ? g.p2 : g.p1) + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? b : a) + '`' : 'الـ ** تعادل ** : <@' + g.p1 + '> & <@' + g.p2 + '>') +
+    '\n\nالـ ** لعبة ** : الـ`' + typeLabel + '` .! `-` الـ **💰 - مبلغ** : `' + fmt(g.bet) + '` .!\n' +
+    'الرقم المطلوب: **' + g.closeMax + '** • الفروق: ' + aDiff + ' / ' + bDiff + '\n' +
     (winner ? (g.approxMode === 'far' ? 'الفائز هو الأبعد عن الهدف.' : 'الفائز هو الأقرب إلى الهدف.') : 'تعادل! لا يتم سحب أي مبلغ من الطرفين.') +
     (reason ? '\n' + reason : '');
   await settle(g, winner, result);
