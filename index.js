@@ -1016,8 +1016,20 @@ async function gameButton(i, parts) {
   }
 }
 function withdrawPanel() {
+  const description = [
+    'لسحب رصيدك وتحويله إلى كريدت قم باتباع الخطوات التالية:',
+    '',
+    '1️⃣ اضغط على الزر بالأسفل (**طلب سحب**)',
+    '2️⃣ اكتب القيمة التي تريد سحبها',
+    '3️⃣ ستصلك رسالة تأكيد السحب عند اكتمال العملية',
+    '',
+    '**تنويه:**',
+    '- أقل مبلغ للسحب هو: **' + fmt(CFG.minWithdraw) + '**',
+    '- أعلى مبلغ للسحب هو: **' + fmt(CFG.maxWithdraw) + '**',
+    '- قد تستغرق العملية **24 ساعة كحد أقصى**',
+  ].join('\\n');
   return {
-    embeds: [makeEmbed('💳 سحب الرصيد', 'اضغط لطلب سحب كويناتك.\nالحد الأدنى: **' + fmt(CFG.minWithdraw) + '**\nالحد الأعلى: **' + fmt(CFG.maxWithdraw) + '**\nالطلبات تخضع لمراجعة الإدارة.')],
+    embeds: [makeEmbed('💳 سحب الرصيد', description).setColor(0x57f287)],
     components: [new ActionRowBuilder().addComponents(btn('w:open', 'طلب سحب', ButtonStyle.Success))],
   };
 }
