@@ -2980,9 +2980,69 @@ async function ensureRulesEmbed() {
   console.log('Rules embed sent to channel:', channelId);
 }
 
+async function ensureRedeemInfoEmbed() {
+  const channelId = '1575333191361765386';
+  const channel = await client.channels.fetch(channelId).catch(error => {
+    console.error('Could not fetch redeem info channel:', error);
+    return null;
+  });
+  if (!channel || !channel.isTextBased() || typeof channel.send !== 'function') {
+    console.error('Redeem info channel is unavailable or is not a text channel:', channelId);
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x22C55E)
+    .setAuthor({ name: 'BATOOT CASINO • REDEEM CENTER', iconURL: client.user.displayAvatarURL() })
+    .setTitle('🎁 أكواد الاسترداد | Redeem Codes')
+    .setDescription([
+      'مرحباً بك في مركز استرداد أكواد **Batoot Casino**!',
+      'استخدم الأكواد الصحيحة لتحصل على مكافآتك قبل نفادها.',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━'
+    ].join('\n'))
+    .addFields(
+      {
+        name: '⚡・السرعة تصنع الفرق',
+        value: 'الأكواد متاحة للجميع، لكن الأسبقية لمن يقوم باستردادها أولاً.'
+      },
+      {
+        name: '⏳・مدة الصلاحية',
+        value: 'قد تكون بعض الأكواد محدودة بوقت معين؛ بادر باستخدامها قبل انتهاء صلاحيتها.'
+      },
+      {
+        name: '🎉・المكافآت',
+        value: 'كل كود يمنح جائزة محددة عند تفعيله بنجاح، حسب إعدادات الكود.'
+      },
+      {
+        name: '🚫・حد الاستخدام',
+        value: 'عند بلوغ الكود الحد الأقصى لعدد مرات الاسترداد، سيتوقف عن قبول طلبات جديدة.'
+      }
+    )
+    .setFooter({ text: 'BATOOT CASINO • GOOD LUCK & ENJOY' })
+    .setTimestamp();
+
+  db.settings = db.settings || {};
+  const previousId = db.settings.redeemInfoMessageId;
+  if (previousId) {
+    const previous = await channel.messages.fetch(previousId).catch(() => null);
+    if (previous) {
+      await previous.edit({ embeds: [embed] });
+      console.log('Redeem info embed updated in channel:', channelId);
+      return;
+    }
+  }
+
+  const sent = await channel.send({ embeds: [embed] });
+  db.settings.redeemInfoMessageId = sent.id;
+  await save();
+  console.log('Redeem info embed sent to channel:', channelId);
+}
+
 client.once('ready', async () => {
   console.log('Batoot Casino ready: ' + client.user.tag);
   await ensureRulesEmbed().catch(error => console.error('Rules embed setup failed:', error));
+  await ensureRedeemInfoEmbed().catch(error => console.error('Redeem info embed setup failed:', error));
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
   if (guild) {
     const members = await guild.members.fetch().catch(error => {
