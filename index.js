@@ -108,6 +108,7 @@ async function loadGitHubData() {
     db.transfers = parsed.transfers || {};
     db.linkRequests = parsed.linkRequests || {};
     db.linkedAccounts = parsed.linkedAccounts || {};
+    db.linkCooldowns = parsed.linkCooldowns || {};
     db.linkedWithdrawals = parsed.linkedWithdrawals || {};
     db.adminLogs = parsed.adminLogs || [];
     githubFileSha = remote.sha;
@@ -167,8 +168,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkedWithdrawals: old.linkedWithdrawals || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkedWithdrawals: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -555,8 +556,29 @@ async function transferButton(i, parts) {
     .setTimestamp();
   return i.update({ embeds: [embed], components: [] });
 }
+function linkedPartners(id) {
+  const value = db.linkedAccounts[String(id)];
+  const list = Array.isArray(value) ? value : (value ? [value] : []);
+  return [...new Set(list.map(String).filter(Boolean))];
+}
 function linkedTo(id) {
-  return db.linkedAccounts[String(id)] || null;
+  return linkedPartners(id)[0] || null;
+}
+function hasLinkedPair(a, b) {
+  return linkedPartners(a).includes(String(b)) && linkedPartners(b).includes(String(a));
+}
+function addLinkedPair(a, b) {
+  const aa = linkedPartners(a), bb = linkedPartners(b);
+  if (!aa.includes(String(b))) aa.push(String(b));
+  if (!bb.includes(String(a))) bb.push(String(a));
+  db.linkedAccounts[String(a)] = aa;
+  db.linkedAccounts[String(b)] = bb;
+}
+function removeLinkedPair(a, b) {
+  db.linkedAccounts[String(a)] = linkedPartners(a).filter(x => x !== String(b));
+  db.linkedAccounts[String(b)] = linkedPartners(b).filter(x => x !== String(a));
+  if (!db.linkedAccounts[String(a)].length) delete db.linkedAccounts[String(a)];
+  if (!db.linkedAccounts[String(b)].length) delete db.linkedAccounts[String(b)];
 }
 async function requestAccountLink(message, args) {
   const target = await targetUser(message, args[1]);
@@ -565,25 +587,32 @@ async function requestAccountLink(message, args) {
   }
   const targetMember = await message.guild.members.fetch(target.id).catch(() => null);
   if (!targetMember) return message.reply('❎ يجب أن يكون الطرفان داخل السيرفر.');
-  if (linkedTo(message.author.id) || linkedTo(target.id)) {
-    return message.reply('❎ أحد الحسابين مرتبط مسبقاً. افصل الارتباط الحالي أولاً باستخدام `فك @عضو`.');
-  }
+  const from = String(message.author.id), to = String(target.id);
+  const mine = linkedPartners(from), theirs = linkedPartners(to);
+  if (mine.includes(to)) return message.reply('❎ هذا الحساب مرتبط بك بالفعل.');
+  if (mine.length >= 5) return message.reply('❎ وصلت إلى الحد الأقصى: 5 حسابات مرتبطة.');
+  if (theirs.length >= 5) return message.reply('❎ الطرف الثاني وصل إلى الحد الأقصى: 5 حسابات مرتبطة.');
+  db.linkCooldowns = db.linkCooldowns || {};
+  const remaining = 30000 - (Date.now() - Number(db.linkCooldowns[from] || 0));
+  if (remaining > 0) return message.reply('⏳ انتظر ' + Math.ceil(remaining / 1000) + ' ثانية قبل إرسال طلب ربط آخر.');
   const existing = Object.values(db.linkRequests).find(x => x && x.status === 'pending' &&
-    ((x.from === message.author.id && x.to === target.id) || (x.from === target.id && x.to === message.author.id)));
+    ((x.from === from && x.to === to) || (x.from === to && x.to === from)));
   if (existing) return message.reply('⏳ يوجد طلب ربط معلّق بينكما بالفعل.');
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-  db.linkRequests[id] = { id, from: message.author.id, to: target.id, status: 'pending',
-    createdAt: Date.now(), expiresAt: Date.now() + 120000 };
+  db.linkRequests[id] = { id, from, to, status: 'pending',
+    createdAt: Date.now(), expiresAt: Date.now() + 15000 };
+  db.linkCooldowns[from] = Date.now();
   await save();
   const embed = greenEmbed('🔗 طلب ربط الحسابات',
     '━━━━━━━━━━━━━━━━━━━━\nتم إرسال طلب لربط المحفظتين بين الطرفين.\n━━━━━━━━━━━━━━━━━━━━')
-    .setAuthor({ name: 'BAToot CASINO • ACCOUNT LINK', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+    .setAuthor({ name: 'GOLDEN CASINO • ACCOUNT LINK', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
     .addFields(
       { name: '👤 صاحب الطلب', value: message.author.toString(), inline: true },
       { name: '🤝 الطرف الثاني', value: target.toString(), inline: true },
       { name: '🛡️ الحماية', value: 'لا يتم نقل أو خصم أي رصيد بمجرد الربط.', inline: false },
-      { name: '⏳ مدة الطلب', value: 'دقيقتان', inline: true },
+      { name: '⏳ مدة الطلب', value: '15 ثانية', inline: true },
       { name: '📌 الخطوة التالية', value: 'على الطرف الثاني الضغط على **قبول الربط** لإكمال العملية.', inline: false },
+      { name: '🔗 الحسابات المرتبطة', value: mine.length + '/5 لك • ' + theirs.length + '/5 للطرف الثاني', inline: true },
     );
   const row = new ActionRowBuilder().addComponents(
     btn('l:linkaccept:' + id, 'قبول الربط', ButtonStyle.Success),
@@ -595,27 +624,29 @@ async function requestAccountLink(message, args) {
   await save();
 }
 async function requestLinkedWithdrawal(message, args) {
-  const partnerId = linkedTo(message.author.id);
-  if (!partnerId) return message.reply('❎ حسابك غير مرتبط. استخدم `ربط @عضو` أولاً.');
+  const partners = linkedPartners(message.author.id);
+  if (!partners.length) return message.reply('❎ حسابك غير مرتبط. استخدم `ربط @عضو` أولاً.');
   const mentioned = message.mentions.users.first();
-  if (mentioned && mentioned.id !== partnerId) return message.reply('❎ يمكنك السحب فقط من الحساب المرتبط بك.');
+  if (partners.length > 1 && !mentioned) return message.reply('اختر الحساب المطلوب السحب منه: `سحب @الشريك 10m`.');
+  const partnerId = mentioned ? mentioned.id : partners[0];
+  if (!partners.includes(partnerId)) return message.reply('❎ هذا العضو ليس ضمن حساباتك المرتبطة.');
   const amount = amountOf(mentioned ? args[2] : args[1]);
-  if (!amount) return message.reply('❎ الاستخدام: `سحب 10m` أو `سحب 250k`.');
+  if (!amount) return message.reply('❎ الاستخدام: `سحب @الشريك 10m` أو `سحب 10m` إذا كان لديك شريك واحد.');
   const source = account(partnerId);
   if (source.coins < amount) return message.reply('❎ رصيد الحساب المرتبط غير كافٍ. رصيده الحالي: **' + fmt(source.coins) + '**.');
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   db.linkedWithdrawals[id] = { id, from: partnerId, to: message.author.id, amount,
-    status: 'pending', createdAt: Date.now(), expiresAt: Date.now() + 120000 };
+    status: 'pending', createdAt: Date.now(), expiresAt: Date.now() + 15000 };
   await save();
   const embed = greenEmbed('💸 طلب سحب من المحفظة المرتبطة',
     '━━━━━━━━━━━━━━━━━━━━\nطلب تحويل رصيد بين المحفظتين المرتبطتين.\n━━━━━━━━━━━━━━━━━━━━')
-    .setAuthor({ name: 'BAToot CASINO • WALLET TRANSFER', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+    .setAuthor({ name: 'GOLDEN CASINO • WALLET TRANSFER', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
     .addFields(
       { name: '📤 سيتم الخصم من', value: '<@' + partnerId + '>', inline: true },
       { name: '📥 المستفيد', value: message.author.toString(), inline: true },
       { name: '💰 المبلغ المطلوب', value: '**' + fmt(amount) + ' كوين**', inline: false },
       { name: '🔐 تأكيد الأمان', value: 'لن يتم تنفيذ العملية إلا بموافقة صاحب المحفظة التي سيُخصم منها الرصيد.', inline: false },
-      { name: '⏳ صلاحية الطلب', value: 'دقيقتان', inline: true },
+      { name: '⏳ صلاحية الطلب', value: '15 ثانية', inline: true },
     );
   const row = new ActionRowBuilder().addComponents(
     btn('l:withdrawaccept:' + id, 'موافقة ونقل الرصيد', ButtonStyle.Success),
@@ -628,12 +659,14 @@ async function requestLinkedWithdrawal(message, args) {
 }
 async function depositToLinkedPartner(message, args) {
   const userId = message.author.id;
-  const partnerId = linkedTo(userId);
-  if (!partnerId) return message.reply('❎ حسابك غير مرتبط. استخدم ربط @عضو أولاً.');
+  const partners = linkedPartners(userId);
+  if (!partners.length) return message.reply('❎ حسابك غير مرتبط. استخدم `ربط @عضو` أولاً.');
   const mentioned = message.mentions.users.first();
-  if (mentioned && mentioned.id !== partnerId) return message.reply('❎ يمكنك الإيداع فقط للحساب المرتبط بك.');
+  if (partners.length > 1 && !mentioned) return message.reply('اختر الحساب المستلم: `إيداع @الشريك 10m`.');
+  const partnerId = mentioned ? mentioned.id : partners[0];
+  if (!partners.includes(partnerId)) return message.reply('❎ هذا العضو ليس ضمن حساباتك المرتبطة.');
   const raw = String(mentioned ? args[2] : args[1] || '').replace(/,/g, '').toUpperCase();
-  if (!raw) return message.reply('الاستخدام: إيداع @عضو 1000 أو إيداع 1K أو إيداع كامل.');
+  if (!raw) return message.reply('الاستخدام: إيداع @الشريك 1000 أو إيداع 1K أو إيداع كامل.');
   const sender = account(userId);
   const receiver = account(partnerId);
   let amount;
@@ -652,7 +685,7 @@ async function depositToLinkedPartner(message, args) {
   if (sender.coins < amount) return message.reply('❎ رصيدك غير كافٍ. رصيدك الحالي: ' + fmt(sender.coins));
   if (!canAddCoins(receiver, amount)) return message.reply('❎ لا يمكن إضافة المبلغ إلى رصيد الحساب المرتبط.');
   if (active(userId) || active(partnerId)) return message.reply('❎ لا يمكن الإيداع أثناء وجود أحدكما في تحدٍ نشط.');
-  if (linkedTo(partnerId) !== userId) return message.reply('❎ الربط بين الحسابين غير مكتمل حالياً.');
+  if (!hasLinkedPair(userId, partnerId)) return message.reply('❎ الربط بين الحسابين غير مكتمل حالياً.');
   sender.coins -= amount;
   receiver.coins += amount;
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
@@ -670,19 +703,31 @@ async function depositToLinkedPartner(message, args) {
   if (partner) await partner.send('💰 استلمت ' + fmt(amount) + ' كوين من <@' + userId + '>.').catch(() => {});
 }
 async function unlinkAccounts(message, args) {
+  const userId = String(message.author.id);
+  const partners = linkedPartners(userId);
+  if (!partners.length) return message.reply('❎ لا توجد حسابات مرتبطة بحسابك.');
+  const raw = String(args[1] || '').toLowerCase();
+  if (raw === 'all' || raw === 'الكل') {
+    for (const partnerId of partners) removeLinkedPair(userId, partnerId);
+    await save();
+    return message.reply('🔓 تم فصل جميع الحسابات المرتبطة (' + partners.length + ' حسابات).');
+  }
   const target = await targetUser(message, args[1]);
-  if (!target) return message.reply('❎ الاستخدام: `فك @عضو`.');
-  const partnerId = linkedTo(message.author.id);
-  if (!partnerId || partnerId !== target.id) return message.reply('❎ هذا الحساب ليس مرتبطاً بك.');
-  delete db.linkedAccounts[message.author.id];
-  delete db.linkedAccounts[target.id];
+  if (!target) {
+    if (partners.length > 1) return message.reply('لديك أكثر من حساب مرتبط. استخدم `فصل @عضو` أو `فصل all`.');
+    removeLinkedPair(userId, partners[0]);
+    await save();
+    return message.reply('🔓 تم فك الربط مع <@' + partners[0] + '>.');
+  }
+  if (!partners.includes(target.id)) return message.reply('❎ هذا الحساب ليس مرتبطاً بك.');
+  removeLinkedPair(userId, target.id);
   await save();
   const embed = greenEmbed('🔓 تم فك ربط الحسابين',
     '━━━━━━━━━━━━━━━━━━━━\nتم إنهاء الارتباط بين المحفظتين بنجاح.\n━━━━━━━━━━━━━━━━━━━━')
     .addFields(
       { name: 'الحساب الأول', value: message.author.toString(), inline: true },
       { name: 'الحساب الثاني', value: target.toString(), inline: true },
-      { name: 'الحالة', value: '🟢 تم فك الربط — لن تُقبل طلبات سحب مرتبطة بين الحسابين.', inline: false },
+      { name: 'الحسابات المرتبطة المتبقية', value: linkedPartners(userId).length + '/5', inline: false },
     );
   return message.reply({ embeds: [embed] });
 }
@@ -697,13 +742,13 @@ async function linkedAccountButton(i, parts) {
       req.status = 'rejected'; req.finishedAt = Date.now(); await save();
       return i.update({ content: 'تم رفض طلب ربط الحسابين.', embeds: [], components: [] });
     }
-    if (linkedTo(req.from) || linkedTo(req.to)) return ephemeral(i, 'تعذر الربط لأن أحد الحسابين مرتبط حالياً بحساب آخر.');
-    db.linkedAccounts[req.from] = req.to;
-    db.linkedAccounts[req.to] = req.from;
+    if (linkedPartners(req.from).length >= 5 || linkedPartners(req.to).length >= 5) return ephemeral(i, 'تعذر الربط: أحد الحسابين وصل إلى الحد الأقصى (5).');
+    if (hasLinkedPair(req.from, req.to)) return ephemeral(i, 'الحسابان مرتبطان بالفعل.');
+    addLinkedPair(req.from, req.to);
     req.status = 'accepted'; req.finishedAt = Date.now();
     await save();
     return i.update({ embeds: [greenEmbed('✅ تم ربط الحسابين بنجاح',
-      '<@' + req.from + '> و <@' + req.to + '> أصبحا مرتبطين.\n\nأي طلب `سحب` من أحد الحسابين يحتاج موافقة الطرف الذي سيُخصم منه الرصيد.')], components: [] });
+      '<@' + req.from + '> و <@' + req.to + '> أصبحا مرتبطين.\n\nيمكن لكل حساب ربط حتى 5 شركاء. أي طلب سحب من محفظة شريك يتطلب موافقة صاحبها.')], components: [] });
   }
   if (action === 'withdrawaccept' || action === 'withdrawreject') {
     const req = db.linkedWithdrawals[id];
@@ -714,7 +759,7 @@ async function linkedAccountButton(i, parts) {
       req.status = 'rejected'; req.finishedAt = Date.now(); await save();
       return i.update({ content: 'تم رفض طلب نقل الرصيد. لم يتم خصم أي مبلغ.', embeds: [], components: [] });
     }
-    if (linkedTo(req.from) !== req.to || linkedTo(req.to) !== req.from) {
+    if (!hasLinkedPair(req.from, req.to)) {
       req.status = 'cancelled'; await save();
       return ephemeral(i, 'تم إلغاء الطلب لأن ربط الحسابين لم يعد قائماً.');
     }
