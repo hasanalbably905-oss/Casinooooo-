@@ -158,6 +158,24 @@ const db = old && typeof old === 'object'
   : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
+
+// Serialize mutations that touch the same wallet or request. This prevents
+// two rapid Discord interactions from spending or settling the same balance twice.
+const mutationLocks = new Map();
+async function withLock(key, task) {
+  const lockKey = String(key);
+  const previous = mutationLocks.get(lockKey) || Promise.resolve();
+  let release;
+  const current = new Promise(resolve => { release = resolve; });
+  mutationLocks.set(lockKey, current);
+  await previous.catch(() => {});
+  try {
+    return await task();
+  } finally {
+    release();
+    if (mutationLocks.get(lockKey) === current) mutationLocks.delete(lockKey);
+  }
+}
 function save() {
   const operation = writeChain.catch(() => {}).then(async () => {
     const content = JSON.stringify(db, null, 2);
@@ -1170,8 +1188,8 @@ client.on('messageCreate', async message => {
     }
     if (cmd === 'withdraw' && message.channel.id === CFG.withdrawRoom) return message.channel.send(withdrawPanel());
     if (['فلوس', 'money', 'رصيدي', 'balance'].includes(cmd)) return balance(message, message.mentions.users.first() || message.author);
-    if (['يومي', 'daily'].includes(cmd)) return claimDaily(message);
-    if (['عمل', 'work'].includes(cmd)) return workForCoins(message);
+    if (['يومي', 'daily'].includes(cmd)) return withLock('daily:' + message.author.id, () => claimDaily(message));
+    if (['عمل', 'work'].includes(cmd)) return withLock('work:' + message.author.id, () => workForCoins(message));
     if (['ملفي', 'profile', 'بروفايل'].includes(cmd)) return showProfile(message, message.mentions.users.first() || message.author);
     if (['تحويلاتي', 'history'].includes(cmd)) return showTransferHistory(message, message.author);
     if (['سجل-اداري', 'adminlog'].includes(cmd)) return showAdminLog(message);
@@ -1210,14 +1228,23 @@ client.on('interactionCreate', async i => {
   try {
     if (i.isModalSubmit() && i.customId === 'w:modal') {
       await i.deferReply({ ephemeral: true });
-      return withdrawalModal(i);
+      return withLock('withdrawal-modal:' + i.user.id, () => withdrawalModal(i));
     }
     if (!i.isButton()) return;
     const parts = i.customId.split(':');
-    if (parts[0] === 't') return transferButton(i, parts);
-    if (parts[0] === 'c') return creditReviewButton(i, parts);
-    if (parts[0] === 'g') return gameButton(i, parts);
-    if (parts[0] === 'w') return withdrawalButton(i, parts);
+    const family = parts[0];
+    if (!['t', 'c', 'g', 'w'].includes(family)) return;
+    // Lock by the underlying request/game ID, not by button action. A confirm,
+    // reject, roll, or duplicate click on the same object cannot race another.
+    const resourceId = family === 'w' && parts[1] === 'open'
+      ? 'open:' + i.user.id
+      : (family === 'w' && parts[1] === 'rate' ? parts[2] : parts[parts.length - 1]);
+    return withLock(family + ':' + resourceId, async () => {
+      if (family === 't') return transferButton(i, parts);
+      if (family === 'c') return creditReviewButton(i, parts);
+      if (family === 'g') return gameButton(i, parts);
+      if (family === 'w') return withdrawalButton(i, parts);
+    });
   } catch (error) {
     console.error('interactionCreate:', error);
     await ephemeral(i, 'حدث خطأ أثناء تنفيذ العملية. تواصل مع الإدارة إذا لاحظت تغييراً في رصيدك.');
