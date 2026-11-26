@@ -154,8 +154,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkedWithdrawals: old.linkedWithdrawals || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkedWithdrawals: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -533,6 +533,120 @@ async function transferButton(i, parts) {
     .setFooter({ text: 'Batoot Casino • سجل التحويلات' })
     .setTimestamp();
   return i.update({ embeds: [embed], components: [] });
+}
+function linkedTo(id) {
+  return db.linkedAccounts[String(id)] || null;
+}
+async function requestAccountLink(message, args) {
+  const target = await targetUser(message, args[1]);
+  if (!target || target.bot || target.id === message.author.id) {
+    return message.reply('❎ الاستخدام: `ربط @عضو` — حدد عضواً آخر من السيرفر.');
+  }
+  const targetMember = await message.guild.members.fetch(target.id).catch(() => null);
+  if (!targetMember) return message.reply('❎ يجب أن يكون الطرفان داخل السيرفر.');
+  if (linkedTo(message.author.id) || linkedTo(target.id)) {
+    return message.reply('❎ أحد الحسابين مرتبط مسبقاً. افصل الارتباط الحالي أولاً باستخدام `فك @عضو`.');
+  }
+  const existing = Object.values(db.linkRequests).find(x => x && x.status === 'pending' &&
+    ((x.from === message.author.id && x.to === target.id) || (x.from === target.id && x.to === message.author.id)));
+  if (existing) return message.reply('⏳ يوجد طلب ربط معلّق بينكما بالفعل.');
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  db.linkRequests[id] = { id, from: message.author.id, to: target.id, status: 'pending',
+    createdAt: Date.now(), expiresAt: Date.now() + 120000 };
+  await save();
+  const embed = makeEmbed('🔗 طلب ربط حسابين',
+    message.author.toString() + ' يريد ربط حسابه بحسابك.\n\n' +
+    'لن يتم نقل أي رصيد الآن. بعد الربط، أي أمر `سحب` يحتاج موافقتك أنت قبل نقل الكوينز من حسابك.');
+  const row = new ActionRowBuilder().addComponents(
+    btn('l:linkaccept:' + id, 'قبول الربط', ButtonStyle.Success),
+    btn('l:linkreject:' + id, 'رفض', ButtonStyle.Danger),
+  );
+  const sent = await message.reply({ embeds: [embed], components: [row] }).catch(() => null);
+  if (!sent) { db.linkRequests[id].status = 'cancelled'; await save(); return; }
+  db.linkRequests[id].messageId = sent.id;
+  await save();
+}
+async function requestLinkedWithdrawal(message, args) {
+  const partnerId = linkedTo(message.author.id);
+  if (!partnerId) return message.reply('❎ حسابك غير مرتبط. استخدم `ربط @عضو` أولاً.');
+  const amount = amountOf(args[1]);
+  if (!amount) return message.reply('❎ الاستخدام: `سحب 10m` أو `سحب 250k`.');
+  const source = account(partnerId);
+  if (source.coins < amount) return message.reply('❎ رصيد الحساب المرتبط غير كافٍ. رصيده الحالي: **' + fmt(source.coins) + '**.');
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  db.linkedWithdrawals[id] = { id, from: partnerId, to: message.author.id, amount,
+    status: 'pending', createdAt: Date.now(), expiresAt: Date.now() + 120000 };
+  await save();
+  const embed = makeEmbed('💸 طلب نقل رصيد من الحساب المرتبط',
+    'صاحب الطلب: ' + message.author.toString() + '\n' +
+    'سيتم النقل من حساب: <@' + partnerId + '>\n' +
+    'إلى حساب: ' + message.author.toString() + '\n' +
+    'المبلغ: **' + fmt(amount) + ' كوين**\n\n' +
+    'لن يتم خصم شيء إلا بعد موافقة صاحب الحساب الذي سيُخصم منه الرصيد.');
+  const row = new ActionRowBuilder().addComponents(
+    btn('l:withdrawaccept:' + id, 'موافقة ونقل الرصيد', ButtonStyle.Success),
+    btn('l:withdrawreject:' + id, 'رفض الطلب', ButtonStyle.Danger),
+  );
+  const sent = await message.reply({ embeds: [embed], components: [row] }).catch(() => null);
+  if (!sent) { db.linkedWithdrawals[id].status = 'cancelled'; await save(); return; }
+  db.linkedWithdrawals[id].messageId = sent.id;
+  await save();
+}
+async function unlinkAccounts(message, args) {
+  const target = await targetUser(message, args[1]);
+  if (!target) return message.reply('❎ الاستخدام: `فك @عضو`.');
+  const partnerId = linkedTo(message.author.id);
+  if (!partnerId || partnerId !== target.id) return message.reply('❎ هذا الحساب ليس مرتبطاً بك.');
+  delete db.linkedAccounts[message.author.id];
+  delete db.linkedAccounts[target.id];
+  await save();
+  const embed = makeEmbed('🔓 تم فك ربط الحسابين',
+    'تم فك الارتباط بين ' + message.author.toString() + ' و' + target.toString() + '.\nلن يمكن إنشاء طلبات سحب مرتبطة بعد الآن.');
+  return message.reply({ embeds: [embed] });
+}
+async function linkedAccountButton(i, parts) {
+  const action = parts[1], id = parts[2];
+  if (action === 'linkaccept' || action === 'linkreject') {
+    const req = db.linkRequests[id];
+    if (!req || req.status !== 'pending') return ephemeral(i, 'طلب الربط غير متاح أو تمت معالجته.');
+    if (Date.now() > req.expiresAt) { req.status = 'expired'; await save(); return ephemeral(i, 'انتهت مهلة طلب الربط.'); }
+    if (i.user.id !== req.to) return ephemeral(i, 'فقط الشخص الذي وصله طلب الربط يستطيع الرد.');
+    if (action === 'linkreject') {
+      req.status = 'rejected'; req.finishedAt = Date.now(); await save();
+      return i.update({ content: 'تم رفض طلب ربط الحسابين.', embeds: [], components: [] });
+    }
+    if (linkedTo(req.from) || linkedTo(req.to)) return ephemeral(i, 'تعذر الربط لأن أحد الحسابين مرتبط حالياً بحساب آخر.');
+    db.linkedAccounts[req.from] = req.to;
+    db.linkedAccounts[req.to] = req.from;
+    req.status = 'accepted'; req.finishedAt = Date.now();
+    await save();
+    return i.update({ embeds: [makeEmbed('✅ تم ربط الحسابين بنجاح',
+      '<@' + req.from + '> و <@' + req.to + '> أصبحا مرتبطين.\n\nأي طلب `سحب` من أحد الحسابين يحتاج موافقة الطرف الذي سيُخصم منه الرصيد.')], components: [] });
+  }
+  if (action === 'withdrawaccept' || action === 'withdrawreject') {
+    const req = db.linkedWithdrawals[id];
+    if (!req || req.status !== 'pending') return ephemeral(i, 'طلب السحب غير متاح أو تمت معالجته.');
+    if (Date.now() > req.expiresAt) { req.status = 'expired'; await save(); return ephemeral(i, 'انتهت مهلة طلب السحب.'); }
+    if (i.user.id !== req.from) return ephemeral(i, 'فقط صاحب الحساب الذي سيُخصم منه الرصيد يستطيع الموافقة أو الرفض.');
+    if (action === 'withdrawreject') {
+      req.status = 'rejected'; req.finishedAt = Date.now(); await save();
+      return i.update({ content: 'تم رفض طلب نقل الرصيد. لم يتم خصم أي مبلغ.', embeds: [], components: [] });
+    }
+    if (linkedTo(req.from) !== req.to || linkedTo(req.to) !== req.from) {
+      req.status = 'cancelled'; await save();
+      return ephemeral(i, 'تم إلغاء الطلب لأن ربط الحسابين لم يعد قائماً.');
+    }
+    const source = account(req.from), destination = account(req.to);
+    if (source.coins < req.amount) return ephemeral(i, 'الرصيد الحالي لم يعد كافياً. لم يتم خصم أي مبلغ.');
+    if (!canAddCoins(destination, req.amount)) return ephemeral(i, 'لا يمكن إضافة المبلغ إلى حسابك بسبب الحد الأعلى للرصيد.');
+    source.coins -= req.amount;
+    destination.coins += req.amount;
+    req.status = 'completed'; req.finishedAt = Date.now();
+    req.sourceBalanceAfter = source.coins; req.destinationBalanceAfter = destination.coins;
+    await save();
+    return i.update({ embeds: [makeEmbed('✅ تمت عملية نقل الرصيد',
+      'تمت موافقة صاحب الحساب المرتبط ونقل الرصيد بنجاح.\n\nمن: <@' + req.from + '>\nإلى: <@' + req.to + '>\nالمبلغ: **' + fmt(req.amount) + ' كوين**\nرصيدك الجديد: **' + fmt(destination.coins) + '**')], components: [] });
+  }
 }
 async function claimDaily(message) {
   const data = account(message.author.id);
@@ -1208,6 +1322,9 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (cmd === 'ربط') return requestAccountLink(message, args);
+    if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
+    if (cmd === 'فك') return unlinkAccounts(message, args);
     if (['تحويل', 'transfer', 'pay'].includes(cmd)) return createMemberTransfer(message, args);
     if (cmd === 'شحن') {
       const parsed = legacyAdminAmount(args[1]);
@@ -1244,7 +1361,7 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس — عرض الرصيد\nيومي — استلام مكافأة كل 24 ساعة\nعمل — العمل مقابل كوينز كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — طلب تحويل رصيد إلى عضو بعد تأكيدك، مثال: تحويل @عضو 250k\nتحويلاتي — آخر 10 تحويلات لك\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر والإدارة المعتمدة)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر والإدارة المعتمدة)\nسجل-اداري — آخر 10 عمليات إضافة وخصم (للإدارة)')] });
+        'فلوس — عرض الرصيد\nيومي — استلام مكافأة كل 24 ساعة\nعمل — العمل مقابل كوينز كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل رصيد بعد تأكيدك، مثال: تحويل @عضو 250k\nربط @عضو — إرسال طلب ربط حسابين (بموافقة الطرف الآخر)\nسحب مبلغ — طلب نقل رصيد من الحساب المرتبط (بموافقة صاحبه)، مثال: سحب 10m\nفك @عضو — فك ربط الحسابين\nتحويلاتي — آخر 10 تحويلات لك\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر والإدارة المعتمدة)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر والإدارة المعتمدة)\nسجل-اداري — آخر 10 عمليات إضافة وخصم (للإدارة)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
@@ -1261,7 +1378,7 @@ client.on('interactionCreate', async i => {
     if (!i.isButton()) return;
     const parts = i.customId.split(':');
     const family = parts[0];
-    if (!['t', 'c', 'g', 'w'].includes(family)) return;
+    if (!['t', 'c', 'g', 'w', 'l'].includes(family)) return;
     // Lock by the underlying request/game ID, not by button action. A confirm,
     // reject, roll, or duplicate click on the same object cannot race another.
     const resourceId = family === 'w' && parts[1] === 'open'
@@ -1272,6 +1389,7 @@ client.on('interactionCreate', async i => {
       if (family === 'c') return creditReviewButton(i, parts);
       if (family === 'g') return gameButton(i, parts);
       if (family === 'w') return withdrawalButton(i, parts);
+      if (family === 'l') return linkedAccountButton(i, parts);
     });
   } catch (error) {
     console.error('interactionCreate:', error);
