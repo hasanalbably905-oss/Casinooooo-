@@ -1171,7 +1171,7 @@ async function startBotChallenge(message, amount) {
   if (active(message.author.id) ||
       Object.values(db.blackjack || {}).some(g => g && g.userId === message.author.id && g.status === 'playing') ||
       Object.values(db.wheel || {}).some(g => g && g.userId === message.author.id && g.status === 'playing') ||
-      Object.values(db.botChallenges || {}).some(g => g && g.userId === message.author.id && g.status === 'choosing')) {
+      Object.values(db.botChallenges || {}).some(g => g && g.userId === message.author.id && ['choosing', 'playing'].includes(g.status))) {
     return message.reply('لديك تحدٍ أو لعبة نشطة بالفعل؛ أنهها أولاً.');
   }
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 14);
