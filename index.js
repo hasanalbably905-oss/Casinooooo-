@@ -231,35 +231,24 @@ client.probot.on('transfered', async (guild, data, error) => {
       console.error('ProBot transfer error:', error);
       return;
     }
-    if (!data || !data.member) {
-      console.warn('ProBot transfer ignored: missing transfer data/member.');
-      return;
-    }
+    if (!data || !data.member) return;
 
-    const memberId = String(data.member.id || (data.member.user && data.member.user.id) || '');
-    const receiver = data.receiver;
-    const receiverId = String(
-      (receiver && receiver.id) ||
-      (receiver && receiver.user && receiver.user.id) ||
-      ''
-    );
-    const receiverVerified = receiverId
-      ? receiverId === CFG.owner
-      : (data.isOwner === true || data.owner === true);
+    // Keep the legacy Batoot behavior: ProBot confirms the recipient through isOwner.
+    // The library's price is the credited amount after ProBot fees.
+    if (data.isOwner === false) return;
+
+    const member = data.member;
+    const memberId = String(member.id || (member.user && member.user.id) || '');
     const credited = Number(String(data.price ?? '').replace(/,/g, '').trim());
-
-    if (!memberId || !receiverVerified || !Number.isSafeInteger(credited) || credited <= 0) {
-      console.warn('ProBot transfer ignored: failed validation.', {
+    if (!memberId || !Number.isSafeInteger(credited) || credited <= 0) {
+      console.warn('ProBot transfer ignored: invalid member or amount.', {
         memberId: Boolean(memberId),
-        receiverId: receiverId || 'not provided',
         isOwner: data.isOwner,
-        owner: data.owner,
         price: data.price,
       });
       return;
     }
 
-    // Use a source message/transaction ID when the library exposes one.
     const transferId = String(
       (data.message && data.message.id) ||
       data.messageId ||
@@ -273,7 +262,6 @@ client.probot.on('transfered', async (guild, data, error) => {
     }
 
     const userAccount = account(memberId);
-    const previousBalance = userAccount.coins;
     userAccount.coins += credited;
     if (transferId) {
       db.processedTransfers[transferId] = Date.now();
@@ -285,28 +273,25 @@ client.probot.on('transfered', async (guild, data, error) => {
     }
     await save();
 
-    const sender = data.member.user || data.member;
-    const avatar = typeof sender.displayAvatarURL === 'function'
-      ? sender.displayAvatarURL({ dynamic: true })
+    const sender = member.user || member;
+    const avatar = typeof client.user?.displayAvatarURL === 'function'
+      ? client.user.displayAvatarURL({ dynamic: true })
       : null;
     const embed = new EmbedBuilder()
       .setColor(0x57f287)
-      .setTitle('تم شحن الرصيد بنجاح')
-      .setDescription('تم التحقق من عملية التحويل وإضافة الرصيد إلى حسابك.')
+      .setDescription('تم الشحن بنجاح')
       .addFields(
-        { name: 'العضو', value: '<@' + memberId + '>', inline: true },
-        { name: 'المبلغ المحوّل', value: '**' + fmt(credited) + '** كوين', inline: true },
-        { name: 'المستلم', value: '<@' + CFG.owner + '>', inline: true },
-        { name: 'الرصيد السابق', value: fmt(previousBalance) + ' كوين', inline: true },
-        { name: 'الرصيد الحالي', value: '**' + fmt(userAccount.coins) + '** كوين', inline: true },
+        { name: 'المبلغ', value: '> ' + fmt(credited) },
+        { name: 'المستلم', value: '> <@' + memberId + '>' },
+        { name: 'الرصيد الحالي', value: '> ' + fmt(userAccount.coins) },
       )
-      .setFooter({ text: 'Batoot Casino • تحويل ProBot موثّق' })
+      .setFooter({ text: (data.channel && data.channel.guild && data.channel.guild.name) || 'Batoot Casino' })
       .setTimestamp();
     if (avatar) embed.setThumbnail(avatar);
 
-    const destination = data.channel || (guild && guild.channel);
-    if (destination && typeof destination.send === 'function') {
-      await destination.send({ embeds: [embed] }).catch(err => {
+    const channel = data.channel || (guild && guild.channel);
+    if (channel && typeof channel.send === 'function') {
+      await channel.send({ embeds: [embed], content: '<@' + memberId + '>' }).catch(err => {
         console.error('Could not send ProBot credit confirmation:', err);
       });
     } else {
