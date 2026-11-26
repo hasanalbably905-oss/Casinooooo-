@@ -234,6 +234,12 @@ function active(id, excludeId) {
   return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
 }
 const makeEmbed = (title, description) => new EmbedBuilder().setColor(0x30343b).setTitle(title).setDescription(description || '').setFooter({ text: 'Batoot Casino' }).setTimestamp();
+const greenEmbed = (title, description) => new EmbedBuilder()
+  .setColor(0x22c55e)
+  .setTitle(title)
+  .setDescription(description || '')
+  .setFooter({ text: 'BAToot CASINO • SECURE WALLET' })
+  .setTimestamp();
 const btn = (id, label, style) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent],
@@ -557,9 +563,16 @@ async function requestAccountLink(message, args) {
   db.linkRequests[id] = { id, from: message.author.id, to: target.id, status: 'pending',
     createdAt: Date.now(), expiresAt: Date.now() + 120000 };
   await save();
-  const embed = makeEmbed('🔗 طلب ربط حسابين',
-    message.author.toString() + ' يريد ربط حسابه بحسابك.\n\n' +
-    'لن يتم نقل أي رصيد الآن. بعد الربط، أي أمر `سحب` يحتاج موافقتك أنت قبل نقل الكوينز من حسابك.');
+  const embed = greenEmbed('🔗 طلب ربط الحسابات',
+    '━━━━━━━━━━━━━━━━━━━━\nتم إرسال طلب لربط المحفظتين بين الطرفين.\n━━━━━━━━━━━━━━━━━━━━')
+    .setAuthor({ name: 'BAToot CASINO • ACCOUNT LINK', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+    .addFields(
+      { name: '👤 صاحب الطلب', value: message.author.toString(), inline: true },
+      { name: '🤝 الطرف الثاني', value: target.toString(), inline: true },
+      { name: '🛡️ الحماية', value: 'لا يتم نقل أو خصم أي رصيد بمجرد الربط.', inline: false },
+      { name: '⏳ مدة الطلب', value: 'دقيقتان', inline: true },
+      { name: '📌 الخطوة التالية', value: 'على الطرف الثاني الضغط على **قبول الربط** لإكمال العملية.', inline: false },
+    );
   const row = new ActionRowBuilder().addComponents(
     btn('l:linkaccept:' + id, 'قبول الربط', ButtonStyle.Success),
     btn('l:linkreject:' + id, 'رفض', ButtonStyle.Danger),
@@ -580,12 +593,16 @@ async function requestLinkedWithdrawal(message, args) {
   db.linkedWithdrawals[id] = { id, from: partnerId, to: message.author.id, amount,
     status: 'pending', createdAt: Date.now(), expiresAt: Date.now() + 120000 };
   await save();
-  const embed = makeEmbed('💸 طلب نقل رصيد من الحساب المرتبط',
-    'صاحب الطلب: ' + message.author.toString() + '\n' +
-    'سيتم النقل من حساب: <@' + partnerId + '>\n' +
-    'إلى حساب: ' + message.author.toString() + '\n' +
-    'المبلغ: **' + fmt(amount) + ' كوين**\n\n' +
-    'لن يتم خصم شيء إلا بعد موافقة صاحب الحساب الذي سيُخصم منه الرصيد.');
+  const embed = greenEmbed('💸 طلب سحب من المحفظة المرتبطة',
+    '━━━━━━━━━━━━━━━━━━━━\nطلب تحويل رصيد بين المحفظتين المرتبطتين.\n━━━━━━━━━━━━━━━━━━━━')
+    .setAuthor({ name: 'BAToot CASINO • WALLET TRANSFER', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+    .addFields(
+      { name: '📤 سيتم الخصم من', value: '<@' + partnerId + '>', inline: true },
+      { name: '📥 المستفيد', value: message.author.toString(), inline: true },
+      { name: '💰 المبلغ المطلوب', value: '**' + fmt(amount) + ' كوين**', inline: false },
+      { name: '🔐 تأكيد الأمان', value: 'لن يتم تنفيذ العملية إلا بموافقة صاحب المحفظة التي سيُخصم منها الرصيد.', inline: false },
+      { name: '⏳ صلاحية الطلب', value: 'دقيقتان', inline: true },
+    );
   const row = new ActionRowBuilder().addComponents(
     btn('l:withdrawaccept:' + id, 'موافقة ونقل الرصيد', ButtonStyle.Success),
     btn('l:withdrawreject:' + id, 'رفض الطلب', ButtonStyle.Danger),
@@ -603,8 +620,13 @@ async function unlinkAccounts(message, args) {
   delete db.linkedAccounts[message.author.id];
   delete db.linkedAccounts[target.id];
   await save();
-  const embed = makeEmbed('🔓 تم فك ربط الحسابين',
-    'تم فك الارتباط بين ' + message.author.toString() + ' و' + target.toString() + '.\nلن يمكن إنشاء طلبات سحب مرتبطة بعد الآن.');
+  const embed = greenEmbed('🔓 تم فك ربط الحسابين',
+    '━━━━━━━━━━━━━━━━━━━━\nتم إنهاء الارتباط بين المحفظتين بنجاح.\n━━━━━━━━━━━━━━━━━━━━')
+    .addFields(
+      { name: 'الحساب الأول', value: message.author.toString(), inline: true },
+      { name: 'الحساب الثاني', value: target.toString(), inline: true },
+      { name: 'الحالة', value: '🟢 تم فك الربط — لن تُقبل طلبات سحب مرتبطة بين الحسابين.', inline: false },
+    );
   return message.reply({ embeds: [embed] });
 }
 async function linkedAccountButton(i, parts) {
@@ -623,7 +645,7 @@ async function linkedAccountButton(i, parts) {
     db.linkedAccounts[req.to] = req.from;
     req.status = 'accepted'; req.finishedAt = Date.now();
     await save();
-    return i.update({ embeds: [makeEmbed('✅ تم ربط الحسابين بنجاح',
+    return i.update({ embeds: [greenEmbed('✅ تم ربط الحسابين بنجاح',
       '<@' + req.from + '> و <@' + req.to + '> أصبحا مرتبطين.\n\nأي طلب `سحب` من أحد الحسابين يحتاج موافقة الطرف الذي سيُخصم منه الرصيد.')], components: [] });
   }
   if (action === 'withdrawaccept' || action === 'withdrawreject') {
@@ -647,7 +669,7 @@ async function linkedAccountButton(i, parts) {
     req.status = 'completed'; req.finishedAt = Date.now();
     req.sourceBalanceAfter = source.coins; req.destinationBalanceAfter = destination.coins;
     await save();
-    return i.update({ embeds: [makeEmbed('✅ تمت عملية نقل الرصيد',
+    return i.update({ embeds: [greenEmbed('✅ اكتمل تحويل الرصيد',
       'تمت موافقة صاحب الحساب المرتبط ونقل الرصيد بنجاح.\n\nمن: <@' + req.from + '>\nإلى: <@' + req.to + '>\nالمبلغ: **' + fmt(req.amount) + ' كوين**\nرصيدك الجديد: **' + fmt(destination.coins) + '**')], components: [] });
   }
 }
