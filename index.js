@@ -1033,6 +1033,23 @@ function withdrawPanel() {
     components: [new ActionRowBuilder().addComponents(btn('w:open', 'طلب سحب', ButtonStyle.Success))],
   };
 }
+function withdrawalRequestEmbed(req, restored = false) {
+  return new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle('💸 طلب سحب رصيد جديد')
+    .setDescription(
+      'تم استلام طلب سحب جديد، يرجى مراجعته واتخاذ القرار المناسب.\n\n' +
+      '👤 **صاحب الطلب**\n<@' + req.user + '>\n\n' +
+      '💰 **المبلغ المطلوب**\n`' + fmt(req.amount) + ' كوين`\n\n' +
+      '🟢 **الحالة**\nقيد المراجعة'
+    )
+    .addFields(
+      { name: '🆔 رقم الطلب', value: '`' + req.id + '`', inline: true },
+      { name: '📅 وقت الطلب', value: '<t:' + Math.floor(req.created / 1000) + ':R>', inline: true }
+    )
+    .setFooter({ text: restored ? 'Batoot Casino • استعادة طلب محفوظ' : 'Batoot Casino • نظام السحب' })
+    .setTimestamp(req.created);
+}
 async function recoverWithdrawalRequests() {
   const channel = await client.channels.fetch(CFG.requestsRoom).catch(() => null);
   if (!channel || !channel.isTextBased()) {
