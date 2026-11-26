@@ -2312,6 +2312,14 @@ client.on('messageCreate', async message => {
     }
     if (['add', 'اضافة', 'إضافة'].includes(cmd)) return adminBalance(message, args, true);
     if (['rmv', 'remove', 'ازالة', 'إزالة'].includes(cmd)) return adminBalance(message, args, false);
+    if (['بلاك_جاك', 'blackjack', 'بلاكجاك'].includes(cmd)) {
+      const amount = amountOf(args[1]);
+      return withLock('blackjack-start:' + message.author.id, () => startBlackjack(message, amount));
+    }
+    if (['عجلة', 'wheel', 'roulette'].includes(cmd)) {
+      const amount = amountOf(args[1]);
+      return withLock('wheel-start:' + message.author.id, () => startWheel(message, amount));
+    }
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
