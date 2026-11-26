@@ -18,8 +18,10 @@ jobs:
       - run: node --check golden-catalog.js
       - run: node --check golden-social.js
       - run: node --check golden-utilities.js
+      - run: node --check golden-game-rules.js
       - run: node --check golden-json-db.js
       - run: node --check golden-models.js
       - run: node --test test/golden-json-db.test.js
       - run: node --test test/golden-social.test.js
       - run: node --test test/golden-utilities.test.js
+      - run: node --test test/golden-game-rules.test.js
