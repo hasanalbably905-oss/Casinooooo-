@@ -1266,12 +1266,7 @@ async function botChallengeSelect(i) {
 
 async function settleGoldenBotGame(challenge, outcome, detail, multiplier = 0.93) {
   if (!challenge || ['finished', 'cancelled', 'expired'].includes(challenge.status)) return;
-  let ownerBoosted = false;
-  if (isCasinoOwner(challenge.userId) && outcome !== 'win' && crypto.randomInt(100) < 75) {
-    outcome = 'win';
-    ownerBoosted = true;
-  }
-  if (ownerBoosted) detail += '\n👑 تم تفعيل ميزة الأونر في هذه الجولة.';
+
   const wallet = account(challenge.userId);
   let payout = 0;
   if (outcome === 'win') {
@@ -1322,8 +1317,8 @@ async function startBotTakribi(message, challenge) {
   challenge.status='playing';challenge.mode='takribi';challenge.expiresAt=Date.now()+90000;
   const total=a=>a.reduce((x,y)=>x+y,0);
   const makeEmbed=()=>new EmbedBuilder().setColor(0xf1c40f).setTitle('🎯 لعبة الرقم التقريبي ضد البوت')
-    .setDescription('**الرقم المستهدف:** '+target+'\n\n**أنت:** '+(state.player.length?state.player.join(' + ')+' = **'+total(state.player)+'**':'لم تلعب بعد')+(state.playerDone?' ✅':'')+
-      '\n\n**🤖 البوت:** '+(state.bot.length?state.bot.join(' + ')+' = **'+total(state.bot)+'**':'لم يلعب بعد')+(state.botDone?' ✅':''))
+    .setDescription('**الرقم المستهدف:** '+target+'\n\n**أنت:** '+(state.player.length?state.player.join(' + ')+' = **'+total(state.player)+'** (المتبقي: **'+(target-total(state.player))+'**)':'لم تلعب بعد')+(state.playerDone?' ✅':'')+
+      '\n\n**🤖 البوت:** '+(state.bot.length?state.bot.join(' + ')+' = **'+total(state.bot)+'** (المتبقي: **'+(target-total(state.bot))+'**)':'لم يلعب بعد')+(state.botDone?' ✅':''))
     .setFooter({text:'اختر مدى الرقم أو أنهِ دورك • Batoot Casino'});
   const makeRows=()=>[new ActionRowBuilder().addComponents(
     btn('bmt:left:'+challenge.id,'⬅️ '+cfg.left[0]+' - '+cfg.left[1],ButtonStyle.Primary,state.playerDone),
@@ -2108,9 +2103,7 @@ async function editGame(g, title, description, components) {
 }
 async function settle(g, winner, result) {
   if (!g || g.status !== 'playing') return;
-  const ownerResult = applyOwnerAdvantage([g.p1, g.p2], winner);
-  winner = ownerResult.winner;
-  if (ownerResult.boosted) result += '\n👑 تم تفعيل ميزة الأونر بنسبة أفضلية 75% في هذه المواجهة.';
+
   g.status = 'finished';
   if (winner) {
     const loser = winner === g.p1 ? g.p2 : g.p1;
@@ -2354,7 +2347,7 @@ async function gameButton(i, parts) {
     const total = g.closeSums[uid];
     if (total >= g.closeMax) {
       await i.followUp({
-        content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\n' +
+        content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '** (المتبقي: **' + (g.closeMax - total) + '** )\n' +
           (total === g.closeMax ? 'ممتاز! وصلت إلى الرقم المستهدف تماماً وتم إنهاء دورك.' : 'تجاوزت الرقم المستهدف، وسيتم احتسابك حسب الأقرب إليه سواء أعلى أو أقل.'),
         ephemeral: true,
       }).catch(() => {});
@@ -2425,17 +2418,18 @@ async function gameButton(i, parts) {
     if (!Array.isArray(g.rolls[g.p1])) g.rolls[g.p1] = g.rolls[g.p1] === undefined ? [] : [Number(g.rolls[g.p1])];
     if (!Array.isArray(g.rolls[g.p2])) g.rolls[g.p2] = g.rolls[g.p2] === undefined ? [] : [Number(g.rolls[g.p2])];
     if (g.rolls[uid].length >= 3) return ephemeral(i, 'أكملت رمياتك الثلاث بالفعل.');
-    if (g.turn && g.turn !== uid) return ephemeral(i, 'ليس دورك الآن.');
+    // Each player has three independent rolls; turns do not alternate.
     g.rolls[uid].push(crypto.randomInt(1, 7));
     const bothFinished = g.rolls[g.p1].length === 3 && g.rolls[g.p2].length === 3;
     if (!bothFinished) {
-      const other = uid === g.p1 ? g.p2 : g.p1;
-      const nextPlayer = g.rolls[other].length < 3 ? other : uid;
-      g.turn = nextPlayer;
       g.expires = Date.now() + CFG.gameMs;
       await save();
       await i.deferUpdate();
-      await editGame(g, 'لعبة النرد — 3 رميات', '<@' + nextPlayer + '>\n اصبح دورك', gameRows(g));
+      const remaining1 = 3 - g.rolls[g.p1].length;
+      const remaining2 = 3 - g.rolls[g.p2].length;
+      await editGame(g, 'لعبة النرد — 3 فرص لكل لاعب',
+        '<@' + g.p1 + '> رمياتك: **' + diceRollList(g, g.p1).join(' + ') + '** • المتبقي: **' + remaining1 + '**\n' +
+        '<@' + g.p2 + '> رمياتك: **' + diceRollList(g, g.p2).join(' + ') + '** • المتبقي: **' + remaining2 + '**\n\nكل لاعب يرمي متى ما يريد، ولكل لاعب ثلاث رميات.', gameRows(g));
       return;
     }
     const a = diceTotal(g, g.p1), b = diceTotal(g, g.p2);
