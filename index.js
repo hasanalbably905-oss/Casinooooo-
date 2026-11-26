@@ -106,6 +106,8 @@ async function loadGitHubData() {
       : remoteUsers;
     db.games = parsed.games || {};
     db.redeemCodes = parsed.redeemCodes || {};
+    db.liveBets = Array.isArray(parsed.liveBets) ? parsed.liveBets : (db.liveBets || []);
+    db.settings = { ...(db.settings || {}), ...(parsed.settings || {}) };
     db.wheel = parsed.wheel || {};
     db.withdrawals = parsed.withdrawals || {};
     db.processedTransfers = parsed.processedTransfers || {};
@@ -173,8 +175,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, wheel: old.wheel || {}, botChallenges: old.botChallenges || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, wheel: {}, botChallenges: {}, settings: {}, adminLogs: [] };
+  ? { liveBets: Array.isArray(old.liveBets) ? old.liveBets : [], users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, wheel: old.wheel || {}, botChallenges: old.botChallenges || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
+  : { liveBets: [], users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, wheel: {}, botChallenges: {}, settings: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -1060,6 +1062,7 @@ async function finishBlackjack(game, outcome) {
   else if (payout > 0) { game.status = 'refunded'; payout = game.stake; wallet.coins += payout; }
   game.payout = payout;
   await save();
+  await recordLiveBetResult('blackjack:' + game.id, { userId: game.userId, amount: game.stake, game: 'بلاك جاك', status: outcome === 'win' ? 'win' : outcome === 'draw' || outcome === 'expired' || outcome === 'refunded' ? 'refund' : 'loss', payout, detail: outcome === 'win' ? 'فوز في بلاك جاك' : outcome === 'loss' ? 'خسارة الجولة' : 'تمت إعادة الرهان' });
   const channel = await client.channels.fetch(game.channelId).catch(() => null);
   const msg = channel?.isTextBased() ? await channel.messages.fetch(game.messageId).catch(() => null) : null;
   const result = outcome === 'win' ? '🎉 فزت! استلمت **' + fmt(payout) + '** كوين.'
@@ -1116,6 +1119,7 @@ async function finishWheel(game, outcome, landed = null) {
   wallet.coins += payout;
   game.payout = payout;
   await save();
+  await recordLiveBetResult('wheel:' + game.id, { userId: game.userId, amount: game.stake, game: 'عجلة الحظ', status: game.outcome === 'win' ? 'win' : game.outcome === 'refunded' || outcome === 'expired' ? 'refund' : 'loss', payout, detail: landed ? 'النتيجة: ' + landed : 'انتهى الوقت' });
   const channel = await client.channels.fetch(game.channelId).catch(() => null);
   const msg = channel?.isTextBased() ? await channel.messages.fetch(game.messageId).catch(() => null) : null;
   const landedLabel = landed ? ({ yellow: '🟡 الأصفر', black: '⚫ الأسود', green: '🟢 الأخضر' }[landed]) : null;
@@ -1142,6 +1146,7 @@ async function startWheel(message, amount) {
   };
   db.wheel[game.id] = game;
   await save();
+  await recordLiveBetStart('wheel:' + game.id, { userId: game.userId, amount: game.stake, game: 'عجلة الحظ' });
   const sent = await message.reply({ embeds: [wheelEmbed(game)], components: wheelRow(game) });
   game.messageId = sent.id;
   await save();
@@ -1272,6 +1277,7 @@ async function settleGoldenBotGame(challenge, outcome, detail, multiplier = 0.93
   challenge.result = detail;
   challenge.finishedAt = Date.now();
   await save();
+  await recordLiveBetResult('bot:' + challenge.id, { userId: challenge.userId, amount: challenge.stake, game: challenge.selectedGame || challenge.mode || 'تحدي البوت', status: outcome === 'win' ? 'win' : outcome === 'draw' ? 'draw' : outcome === 'refund' ? 'refund' : 'loss', payout, detail });
   const channel = await client.channels.fetch(challenge.channelId).catch(() => null);
   const msg = channel?.isTextBased() && challenge.gameMessageId
     ? await channel.messages.fetch(challenge.gameMessageId).catch(() => null) : null;
@@ -1644,6 +1650,7 @@ async function startBlackjack(message, amount) {
   game.natural = blackjackScore(game.player) === 21;
   db.blackjack[game.id] = game;
   await save();
+  await recordLiveBetStart('blackjack:' + game.id, { userId: game.userId, amount: game.stake, game: 'بلاك جاك' });
   const sent = await message.reply({ embeds: [blackjackEmbed(game)], components: blackjackRow(game) });
   game.messageId = sent.id;
   await save();
@@ -2131,6 +2138,7 @@ async function settle(g, winner, result) {
     g.result = result + '\nتعادل؛ أُعيد الرهان لكل لاعب.';
   }
   await save();
+  await recordLiveBetResult('pvp:' + g.id, { userId: g.p1, opponentId: g.p2, amount: g.bet, game: 'تحدي الأعضاء', status: winner ? 'win' : 'draw', payout: winner ? Math.max(0, g.bet * 2 - Math.floor(g.bet * CFG.fee)) : g.bet * 2, detail: g.result });
   await editGame(g, 'انتهت اللعبة', g.result, []);
 }
 async function refund(g, reason) {
@@ -2940,6 +2948,81 @@ client.on('interactionCreate', async i => {
   }
 });
 
+const LIVE_BETS_CHANNEL_ID = '1575332710283747519';
+function liveBetLabel(status) {
+  return status === 'pending' ? '⏳ جارٍ اللعب' :
+    status === 'win' ? '🟢 فوز' :
+    status === 'loss' ? '🔴 خسارة' :
+    status === 'draw' ? '🟡 تعادل' :
+    status === 'refund' ? '↩️ إعادة الرهان' : '⚪ انتهت';
+}
+async function updateLiveBetsBoard() {
+  db.liveBets = Array.isArray(db.liveBets) ? db.liveBets : [];
+  db.settings = db.settings || {};
+  const channel = await client.channels.fetch(LIVE_BETS_CHANNEL_ID).catch(error => {
+    console.error('Live Bets channel fetch failed:', error);
+    return null;
+  });
+  if (!channel || !channel.isTextBased() || !channel.messages || typeof channel.send !== 'function') {
+    console.warn('Live Bets channel unavailable:', LIVE_BETS_CHANNEL_ID);
+    return;
+  }
+  const rows = db.liveBets.slice(-12).reverse();
+  const description = rows.length ? rows.map((bet, index) =>
+    '**' + (index + 1) + '. ' + (bet.game || 'لعبة') + '** — ' + liveBetLabel(bet.status) +
+    '\\n👤 ' + (bet.userId ? '<@' + bet.userId + '>' : 'لاعب') +
+    (bet.opponentId ? ' ضد <@' + bet.opponentId + '>' : '') +
+    '\\n💰 الرهان: **' + fmt(Number(bet.amount) || 0) + '**' +
+    (bet.payout > 0 ? ' • الجائزة: **' + fmt(bet.payout) + '**' : '') +
+    (bet.detail ? '\\n_' + String(bet.detail).slice(0, 140) + '_' : '')
+  ).join('\\n\\n') : 'لا توجد رهانات مسجلة حتى الآن.';
+  const embed = new EmbedBuilder().setColor(0x22C55E)
+    .setAuthor({ name: 'BATOOT CASINO • LIVE BETS', iconURL: client.user.displayAvatarURL() })
+    .setTitle('🎰 سجل الرهانات المباشر')
+    .setDescription(description)
+    .setFooter({ text: 'يتم تحديث هذه الرسالة تلقائياً • Batoot Casino' })
+    .setTimestamp();
+  let message = db.settings.liveBetsMessageId
+    ? await channel.messages.fetch(db.settings.liveBetsMessageId).catch(() => null) : null;
+  if (!message) {
+    const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+    message = recent && recent.find(m => m.author && m.author.id === client.user.id &&
+      m.embeds && m.embeds.some(e => e.title === '🎰 سجل الرهانات المباشر'));
+  }
+  if (message) {
+    db.settings.liveBetsMessageId = message.id;
+    await message.edit({ embeds: [embed], components: [] });
+  } else {
+    message = await channel.send({ embeds: [embed] });
+    db.settings.liveBetsMessageId = message.id;
+  }
+  await save();
+}
+async function recordLiveBetStart(id, data) {
+  db.liveBets = Array.isArray(db.liveBets) ? db.liveBets : [];
+  let row = db.liveBets.find(item => item && item.id === String(id));
+  if (!row) {
+    row = { id: String(id), createdAt: Date.now(), status: 'pending' };
+    db.liveBets.push(row);
+  }
+  Object.assign(row, data, { id: String(id), status: 'pending' });
+  db.liveBets = db.liveBets.slice(-100);
+  await save();
+  await updateLiveBetsBoard().catch(error => console.error('Live Bets update failed:', error));
+}
+async function recordLiveBetResult(id, data) {
+  db.liveBets = Array.isArray(db.liveBets) ? db.liveBets : [];
+  let row = db.liveBets.find(item => item && item.id === String(id));
+  if (!row) {
+    row = { id: String(id), createdAt: Date.now() };
+    db.liveBets.push(row);
+  }
+  Object.assign(row, data, { id: String(id), finishedAt: Date.now() });
+  db.liveBets = db.liveBets.slice(-100);
+  await save();
+  await updateLiveBetsBoard().catch(error => console.error('Live Bets result update failed:', error));
+}
+
 async function ensureRulesEmbed() {
   const channelId = '1575333584967831643';
   const channel = await client.channels.fetch(channelId).catch(error => {
@@ -3079,6 +3162,7 @@ client.once('ready', async () => {
   console.log('Batoot Casino ready: ' + client.user.tag);
   await ensureRulesEmbed().catch(error => console.error('Rules embed setup failed:', error));
   await ensureRedeemInfoEmbed().catch(error => console.error('Redeem info embed setup failed:', error));
+  await updateLiveBetsBoard().catch(error => console.error('Live Bets board setup failed:', error));
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
   if (guild) {
     const members = await guild.members.fetch().catch(error => {
