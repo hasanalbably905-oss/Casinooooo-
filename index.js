@@ -951,10 +951,27 @@ function legacyCloseEmbed(g) {
     .addFields(players)
     .setFooter({ text: 'الرقم التقريبي • المبلغ: ' + fmt(g.bet) });
 }
+function xoEmbed(g) {
+  const board = (g.board || Array(9).fill(null)).map((v, i) => v || String(i + 1));
+  const lines = [board.slice(0, 3), board.slice(3, 6), board.slice(6, 9)].map(row => row.join(' │ '));
+  return new EmbedBuilder().setColor(0x5865f2).setTitle('❌ لعبة أكس أو')
+    .setDescription(lines.join('\n─────────\n') + '\n\nالدور: <@' + g.turn + '>\nX: <@' + g.p1 + '> • O: <@' + g.p2 + '>')
+    .setFooter({ text: 'الرهان: ' + fmt(g.bet) });
+}
+function rpsEmbed(g) {
+  const labels = { rock: '🪨 حجر', paper: '📄 ورقة', scissors: '✂️ مقص' };
+  const p1 = g.choices && g.choices[g.p1];
+  const p2 = g.choices && g.choices[g.p2];
+  return new EmbedBuilder().setColor(0x5865f2).setTitle('✂️ حجرة ورقة مقص')
+    .setDescription('<@' + g.p1 + '>: ' + (p1 ? labels[p1] : 'بانتظار الاختيار') + '\n<@' + g.p2 + '>: ' + (p2 ? labels[p2] : 'بانتظار الاختيار'))
+    .setFooter({ text: 'الرهان: ' + fmt(g.bet) });
+}
 function gameRows(g) {
   if (g.status === 'pending') return [new ActionRowBuilder().addComponents(
     btn('g:dice:' + g.id, 'النرد 🎲', ButtonStyle.Primary),
     btn('g:close:' + g.id, 'الرقم التقريبي 📊', ButtonStyle.Primary),
+    btn('g:xo:' + g.id, 'أكس أو ❌', ButtonStyle.Primary),
+    btn('g:rps:' + g.id, 'حجرة ورقة مقص ✂️', ButtonStyle.Primary),
     btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger),
   )];
   if (g.status === 'awaiting_accept') return [new ActionRowBuilder().addComponents(
@@ -969,13 +986,36 @@ function gameRows(g) {
   if (g.status === 'playing' && g.mode === 'dice') return [new ActionRowBuilder().addComponents(
     btn('g:roll:' + g.id, 'العب نردك', ButtonStyle.Primary),
   )];
+  if (g.status === 'playing' && g.mode === 'rps') return [new ActionRowBuilder().addComponents(
+    btn('g:rock:' + g.id, '🪨 حجر', ButtonStyle.Primary),
+    btn('g:paper:' + g.id, '📄 ورقة', ButtonStyle.Primary),
+    btn('g:scissors:' + g.id, '✂️ مقص', ButtonStyle.Primary),
+  )];
+  if (g.status === 'playing' && g.mode === 'xo') {
+    const board = g.board || Array(9).fill(null);
+    return [0, 1, 2].map(row => new ActionRowBuilder().addComponents(
+      [0, 1, 2].map(col => {
+        const cell = row * 3 + col;
+        const value = board[cell];
+        const button = new ButtonBuilder()
+          .setCustomId('g:xo:' + cell + ':' + g.id)
+          .setLabel(value || String(cell + 1))
+          .setStyle(value === 'X' ? ButtonStyle.Danger : value === 'O' ? ButtonStyle.Success : ButtonStyle.Secondary)
+          .setDisabled(Boolean(value));
+        return button;
+      })
+    ));
+  }
   return [];
 }
 async function editGame(g, title, description, components) {
   const ch = await client.channels.fetch(g.channel).catch(() => null);
   if (!ch || !ch.isTextBased()) return;
   const msg = await ch.messages.fetch(g.message).catch(() => null);
-  const embed = g.mode === 'close' ? legacyCloseEmbed(g) : legacyGameEmbed(g);
+  const embed = g.mode === 'close' ? legacyCloseEmbed(g)
+    : g.mode === 'xo' ? xoEmbed(g)
+    : g.mode === 'rps' ? rpsEmbed(g)
+    : legacyGameEmbed(g);
   if (msg) await msg.edit({ content: description || null, embeds: [embed], components: components || [] }).catch(() => {});
 }
 async function settle(g, winner, result) {
@@ -994,19 +1034,17 @@ async function settle(g, winner, result) {
       await editGame(g, 'تم إلغاء التحدي', g.result, []);
       return;
     }
-    const winnerScore = g.mode === 'close'
-      ? Number((g.closeSums && g.closeSums[winner]) || 0)
-      : diceTotal(g, winner);
-    const loserScore = g.mode === 'close'
-      ? Number((g.closeSums && g.closeSums[loser]) || 0)
-      : diceTotal(g, loser);
     account(winner).coins += payout;
-    if (g.mode === 'dice') {
-      g.result = '**<@' + winner + '>** فائززززز !!! ب مجموع **' + winnerScore + '** الي يفوز فيه نقطة!\n\n' +
-        '**<@' + loser + '>** خاسر ب مجموع **' + loserScore + '** نقطة!\n> اللعبة: **النرد**, المبلغ: **' + fmt(g.bet) + '**';
+    if (g.mode === 'dice' || g.mode === 'close') {
+      const winnerScore = g.mode === 'close'
+        ? Number((g.closeSums && g.closeSums[winner]) || 0)
+        : diceTotal(g, winner);
+      const loserScore = g.mode === 'close'
+        ? Number((g.closeSums && g.closeSums[loser]) || 0)
+        : diceTotal(g, loser);
+      g.result = '<@' + winner + '> فائز بمجموع ' + winnerScore + ' نقطة.\n<@' + loser + '> خسر بمجموع ' + loserScore + ' نقطة.\nاللعبة: ' + (g.mode === 'dice' ? 'النرد' : 'الرقم التقريبي') + ' • الرهان: ' + fmt(g.bet);
     } else {
-      g.result = '<@' + winner + '>  فائززززز !!! ب مجموع ' + winnerScore + ' نقطة!\n\n' +
-        '<@' + loser + '> خاسر ب مجموع **' + loserScore + '** نقطة!\nاللعبة: **الرقم التقريبي**, المبلغ: **' + fmt(g.bet) + '**';
+      g.result = result + '\n\nالفائز: <@' + winner + '> • الجائزة بعد الرسوم: ' + fmt(payout) + ' كوين.';
     }
   } else {
     account(g.p1).coins += g.bet;
