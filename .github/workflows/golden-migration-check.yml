@@ -1,7 +1,7 @@
 name: Golden migration checks v4
 on:
   push:
-    branches: [migration/json-games]
+    branches: [main, migration/json-games]
   pull_request:
     branches: [main]
   workflow_dispatch:
