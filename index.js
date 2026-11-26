@@ -1599,7 +1599,7 @@ client.on('messageCreate', async message => {
   try {
     if (await handleGoldenUtilities(message, { isAdmin: admin })) return;
     if (await handleGoldenExtras(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '', suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID || '' })) return;
-    if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305' })) return;
+    if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '' })) return;
     if (await handleGoldenCatalog(message, { ownerId: CFG.owner, ownerIds: CFG.owners })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
     if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
@@ -1617,7 +1617,7 @@ client.on('messageCreate', async message => {
     }
     if (cmd === 'withdraw' && message.channel.id === CFG.withdrawRoom) return message.channel.send(withdrawPanel());
     if (['فلوس', 'money', 'رصيدي', 'balance'].includes(cmd)) return balance(message, message.mentions.users.first() || message.author);
-    if (['يومي', 'daily'].includes(cmd)) return withLock('daily:' + message.author.id, () => claimDaily(message));
+    if (['يومي', 'دايلي', 'daily'].includes(cmd)) return withLock('daily:' + message.author.id, () => claimDaily(message));
     if (['عمل', 'work'].includes(cmd)) return withLock('work:' + message.author.id, () => workForCoins(message));
     if (['ملفي', 'profile', 'بروفايل'].includes(cmd)) return showProfile(message, message.mentions.users.first() || message.author);
     if (['تحويلاتي', 'history'].includes(cmd)) return showTransferHistory(message, message.author);
