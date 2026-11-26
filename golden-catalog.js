@@ -9,8 +9,8 @@ const COMMAND_GROUPS = [
     name: '⚔️ أوامر التحديات والألعاب',
     value: [
       '`تحدي @عضو` — تحدي لاعب محدد.',
-      '`تحدي عام` — تحدي عام.',
-      '`تحدي فرندز` — تحدي الأصدقاء.',
+      '`تحدي عام` — تفعيل استقبال التحديات من الجميع.',
+      '`تحدي فرندز` — قصر استقبال التحديات على الأصدقاء المتبادلين.',
       '`العاب` — عرض قائمة الألعاب.',
       '`اوامر` أو `help` — قائمة الأوامر.',
       '`بنج` — سرعة البوت.',
@@ -121,7 +121,7 @@ async function handleGoldenCatalog(message, options = {}) {
     await message.reply({ embeds: [embed] });
     return true;
   }
-  if (['اوامر', 'help'].includes(command)) {
+  if (['اوامر', 'مساعدة', 'help'].includes(command)) {
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
       .setTitle('🎮 أوامر Golden Casino')
