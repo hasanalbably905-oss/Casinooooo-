@@ -1186,16 +1186,17 @@ async function startBotChallenge(message, amount) {
     .setPlaceholder('🔽 اختر اللعبة')
     .setMinValues(1).setMaxValues(1)
     .addOptions(
-      { label: 'الرقم التقريبي', value: 'takribi', description: 'اختر الرقم الأقرب للرقم السري', emoji: '🎯' },
-      { label: 'البحث عن الكرة', value: 'find_ball', description: 'اعثر على الكرة تحت أحد الأكواب', emoji: '🥎' },
-      { label: 'لعبة النرد', value: 'dice', description: 'نافس البوت برمية نرد واحدة', emoji: '🎲' },
-      { label: 'عجلة الحظ', value: 'wheel', description: 'اختر لوناً ودع العجلة تحدد النتيجة', emoji: '🎡' },
-      { label: 'بلاك جاك ضد البوت', value: 'blackjack', description: 'العب أوراقك ضد الموزّع', emoji: '🃏' },
-      { label: 'قلب العملة', value: 'coinflip', description: 'اختر وجه العملة قبل رميها', emoji: '🪙' },
-      { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'إلغاء التحدي بدون خصم الرهان', emoji: '🚫' },
-    );
-  const sent = await message.reply({
-    content: '🔥 | **تحدي بوت جديد!**\n💰 **المبلغ المحدد:** \`' + fmt(amount) + '\` كوين\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
+      { label: 'الرقم التقريبي - ضد البوت', value: 'takribi', description: 'الرقم التقريبي ضد بوت ذكي', emoji: '🎯' },
+      { label: 'البحث عن الكرة', value: 'find_ball', description: 'حاول العثور على الكرة داخل أحد الأكواب', emoji: '🥎' },
+      { label: 'لعبة النرد', value: 'dice', description: 'رمي النرد ومحاولة تحقيق الفوز', emoji: '🎲' },
+      { label: 'عجلة الحظ', value: 'wheel', description: 'اختر لونًا ودع العجلة تحدد مصيرك!', emoji: '🎡' },
+      { label: 'اكس او', value: 'tictactoe', description: 'xo', emoji: '❎' },
+      { label: 'بلاك جاك', value: 'blackjack', description: 'العب بلاك جاك ضد البوت', emoji: '🃏' },
+      { label: 'قلب العملة', value: 'coinflip', description: 'العب كوين فليب ضد البوت', emoji: '🪙' },
+      { label: 'الأبراج 🗼', value: 'towers', description: 'تسلق البرج واختر الأزرار الصحيحة', emoji: '🗼' },
+      { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'قم بإلغاء التحدي الحالي.', emoji: '🚫' },
+    );  const sent = await message.reply({
+    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
     components: [new ActionRowBuilder().addComponents(menu)],
   }).catch(() => null);
   if (!sent) {
