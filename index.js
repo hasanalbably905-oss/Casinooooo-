@@ -1126,7 +1126,7 @@ async function gameButton(i, parts) {
   const g = db.games[id];
   if (!g) return ephemeral(i, 'هذا التحدي غير موجود أو انتهى.');
   const uid = i.user.id;
-  if (action === 'cancel' || action === 'dice' || action === 'close') {
+  if (action === 'cancel' || ['dice', 'close', 'xo', 'rps'].includes(action)) {
     if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
     if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
     if (action === 'cancel') {
@@ -1141,9 +1141,13 @@ async function gameButton(i, parts) {
     g.mode = action;
     g.status = 'awaiting_accept';
     g.expires = Date.now() + CFG.inviteMs;
-    const details = action === 'dice'
-      ? { name: '🎲 لعبة النرد:', value: '> يفوز الذي يحصل على أعلى مجموع من ثلاث مرات, التعادل ليس فوزا !' }
-      : { name: '📊 الرقم التقريبي:', value: '> حاول الوصول إلى الرقم المستهدف أو الاقتراب منه قدر الإمكان. لا يهم إذا كان مجموعك أعلى أو أقل؛ الفائز هو صاحب أقل فرق بين مجموعه والرقم المستهدف. عند تساوي الفرق تنتهي اللعبة بالتعادل ويُعاد الرهان.' };
+    const descriptions = {
+      dice: { name: '🎲 لعبة النرد:', value: '> يفوز صاحب أعلى مجموع من ثلاث رميات.' },
+      close: { name: '📊 الرقم التقريبي:', value: '> حاول الاقتراب من الرقم المستهدف؛ يفوز صاحب أقل فرق.' },
+      xo: { name: '❌ أكس أو:', value: '> أكمل ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.' },
+      rps: { name: '✂️ حجرة ورقة مقص:', value: '> يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.' },
+    };
+    const details = descriptions[action];
     const waiting = new EmbedBuilder()
       .setColor(0x000000)
       .setDescription('> تنبيه: في حال عدم استجابة الطرفين و عدم اكمال التحدي يؤدي الى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب اي مبلغ من الطرفين.')
@@ -1156,7 +1160,7 @@ async function gameButton(i, parts) {
       components: gameRows(g),
     });
     return i.editReply({
-      content: '> لقد تم اختيار اللعبة هي : `' + (action === 'dice' ? 'نرد' : 'الرقم التقريبي') + '` !!',
+      content: '> تم اختيار لعبة: ' + details.name + ' !!',
     });
   }
   if (action === 'accept' || action === 'decline') {
@@ -1180,7 +1184,13 @@ async function gameButton(i, parts) {
     g.expires = Date.now() + CFG.gameMs;
     g.rolls = { [g.p1]: [], [g.p2]: [] };
     if (g.mode === 'close') initializeApproximateGame(g);
-    else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
+    else if (g.mode === 'xo') {
+      g.board = Array(9).fill(null);
+      g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
+    } else if (g.mode === 'rps') {
+      g.choices = {};
+      g.turn = null;
+    } else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
     await save();
     await i.deferReply({ ephemeral: true });
     await i.editReply({
@@ -1191,7 +1201,9 @@ async function gameButton(i, parts) {
       editGame(
         g,
         'بدأ التحدي',
-        '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\n اصبح دورك',
+        g.mode === 'rps'
+          ? 'يختار كل لاعب الآن حجرة أو ورقة أو مقص.'
+          : '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\n اصبح دورك',
         gameRows(g),
       ).catch(err => console.error('Could not start accepted game:', err));
     }, 2500);
@@ -1229,6 +1241,57 @@ async function gameButton(i, parts) {
       content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\nحاول الاقتراب من الرقم المستهدف؛ يمكنك إنهاء دورك بالضغط على finish.',
       ephemeral: true,
     }).catch(() => {});
+    return;
+  }
+  if (['rock', 'paper', 'scissors'].includes(action)) {
+    if (g.status !== 'playing' || g.mode !== 'rps') return ephemeral(i, 'لعبة حجرة ورقة مقص غير نشطة.');
+    if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'أنت لست أحد لاعبي هذا التحدي.');
+    if (g.choices && g.choices[uid]) return ephemeral(i, 'لقد سجلت اختيارك بالفعل.');
+    if (!g.choices) g.choices = {};
+    g.choices[uid] = action;
+    g.expires = Date.now() + CFG.gameMs;
+    await save();
+    await i.deferUpdate();
+    if (!g.choices[g.p1] || !g.choices[g.p2]) {
+      await editGame(g, 'حجرة ورقة مقص', 'تم تسجيل اختيار لاعب؛ بانتظار اللاعب الآخر.', gameRows(g));
+      return;
+    }
+    const a = g.choices[g.p1], b = g.choices[g.p2];
+    const beats = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
+    const winner = a === b ? null : (beats[a] === b ? g.p1 : g.p2);
+    const labels = { rock: '🪨 حجر', paper: '📄 ورقة', scissors: '✂️ مقص' };
+    const result = '<@' + g.p1 + '> اختار ' + labels[a] + '\n<@' + g.p2 + '> اختار ' + labels[b];
+    await settle(g, winner, result);
+    return;
+  }
+  if (action === 'xo') {
+    if (g.status !== 'playing' || g.mode !== 'xo') return ephemeral(i, 'لعبة أكس أو غير نشطة.');
+    if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'أنت لست أحد لاعبي هذا التحدي.');
+    if (uid !== g.turn) return ephemeral(i, 'ليس دورك الآن.');
+    const cell = Number(parts[2]);
+    if (!Number.isInteger(cell) || cell < 0 || cell > 8) return ephemeral(i, 'الخانة غير صحيحة.');
+    if (!Array.isArray(g.board)) g.board = Array(9).fill(null);
+    if (g.board[cell]) return ephemeral(i, 'هذه الخانة مستخدمة بالفعل.');
+    const mark = uid === g.p1 ? 'X' : 'O';
+    g.board[cell] = mark;
+    const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    const won = wins.some(line => line.every(index => g.board[index] === mark));
+    const draw = !won && g.board.every(Boolean);
+    g.expires = Date.now() + CFG.gameMs;
+    await i.deferUpdate();
+    if (won) {
+      await save();
+      await settle(g, uid, 'فاز <@' + uid + '> بعد إكمال ثلاثة رموز متتالية.');
+      return;
+    }
+    if (draw) {
+      await save();
+      await settle(g, null, 'انتهت لعبة أكس أو بالتعادل.');
+      return;
+    }
+    g.turn = uid === g.p1 ? g.p2 : g.p1;
+    await save();
+    await editGame(g, 'لعبة أكس أو', 'الدور الآن عند <@' + g.turn + '>.', gameRows(g));
     return;
   }
   if (action === 'roll') {
