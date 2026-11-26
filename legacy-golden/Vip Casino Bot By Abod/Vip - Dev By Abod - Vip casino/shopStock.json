@@ -1,0 +1,40 @@
+{
+  "items": [
+    {
+      "id": "item_1773731710322_7280",
+      "name": "تذاكر بوتولا (×1)",
+      "type": "ticket",
+      "qtyPerPurchase": 1,
+      "stock": 9,
+      "limitPeriod": null,
+      "price": 20000000,
+      "ticketFee": 20000000,
+      "purchaseLog": {},
+      "createdAt": "2026-03-17T07:15:10.322Z"
+    },
+    {
+      "id": "item_1773731759591_3596",
+      "name": "shownumber",
+      "type": "command",
+      "qtyPerPurchase": 1,
+      "stock": 10,
+      "limitPeriod": null,
+      "price": 30000000,
+      "ticketFee": 0,
+      "purchaseLog": {},
+      "createdAt": "2026-03-17T07:15:59.591Z"
+    },
+    {
+      "id": "item_1782245321011_3077",
+      "name": "baknumber",
+      "type": "command",
+      "qtyPerPurchase": 30,
+      "stock": 45,
+      "limitPeriod": null,
+      "price": 30000000,
+      "ticketFee": 0,
+      "purchaseLog": {},
+      "createdAt": "2026-06-23T20:08:41.011Z"
+    }
+  ]
+}

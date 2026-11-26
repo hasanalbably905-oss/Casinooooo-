@@ -1,0 +1,75 @@
+{
+  "sendTime": "15:00",
+  "lastSent": {
+    "code": "golden9645",
+    "timestamp": 1782388800649,
+    "time": "15:00",
+    "date": "06/25/2026"
+  },
+  "history": [
+    {
+      "code": "lucky4656",
+      "timestamp": 1777809600282,
+      "time": "15:00",
+      "date": "05/03/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "golden7274",
+      "timestamp": 1777896000044,
+      "time": "15:00",
+      "date": "05/04/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "lucky6307",
+      "timestamp": 1777982400654,
+      "time": "15:00",
+      "date": "05/05/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "lucky4963",
+      "timestamp": 1778068800750,
+      "time": "15:00",
+      "date": "05/06/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "winner7109",
+      "timestamp": 1782129600312,
+      "time": "15:00",
+      "date": "06/22/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "happy902",
+      "timestamp": 1782216000634,
+      "time": "15:00",
+      "date": "06/23/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "happy602",
+      "timestamp": 1782302400762,
+      "time": "15:00",
+      "date": "06/24/2026",
+      "amount": 100000,
+      "maxUses": 50
+    },
+    {
+      "code": "golden9645",
+      "timestamp": 1782388800649,
+      "time": "15:00",
+      "date": "06/25/2026",
+      "amount": 100000,
+      "maxUses": 50
+    }
+  ]
+}

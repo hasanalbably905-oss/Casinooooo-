@@ -1,0 +1,173 @@
+{
+  "981118052777201666": {
+    "startbotola": {
+      "infinite": true
+    },
+    "botola": {
+      "infinite": true
+    },
+    "blacklist": {
+      "infinite": true
+    },
+    "unblacklist": {
+      "infinite": true
+    },
+    "botolacancel": {
+      "infinite": true
+    },
+    "giveticket": {
+      "infinite": true
+    },
+    "rmv": {
+      "infinite": true
+    },
+    "rmvticket": {
+      "infinite": true
+    },
+    "resetplaygame": {
+      "infinite": true
+    },
+    "rmvbudget": {
+      "infinite": true
+    },
+    "budget": {
+      "infinite": true
+    },
+    "ourbudget": {
+      "infinite": true
+    },
+    "give": {
+      "infinite": true
+    },
+    "showpunishes": {
+      "infinite": true
+    },
+    "punish": {
+      "infinite": true
+    }
+  },
+  "1143096697266913322": {
+    "blacklist": {
+      "infinite": true
+    },
+    "unblacklist": {
+      "infinite": true
+    }
+  },
+  "1355726712310071386": {
+    "rmv": {
+      "infinite": true
+    }
+  },
+  "1136231098544816251": {
+    "setpermission": {
+      "infinite": true
+    },
+    "!setpermission": {
+      "infinite": true
+    }
+  },
+  "1244985850366791732": {
+    "addbudget": {
+      "times": 4
+    },
+    "owners": {
+      "infinite": true
+    }
+  },
+  "1116779326080290946": {
+    "10m": {
+      "times": 2
+    }
+  },
+  "998706760749682789": {
+    "shownumber": {
+      "times": 1
+    }
+  },
+  "1258122128977559644": {
+    "shownumber": {
+      "times": 1
+    }
+  },
+  "881281106081624084": {
+    "nextnumber": {
+      "times": 1
+    }
+  },
+  "1391817451443978340": {
+    "add": {
+      "infinite": true
+    },
+    "rmv": {
+      "infinite": true
+    },
+    "backnumber": {
+      "times": 1
+    },
+    "baknumber": {
+      "times": 60
+    }
+  },
+  "1395433870953943061": {
+    "add": {
+      "infinite": true
+    }
+  },
+  "1250070256261791816": {
+    "add": {
+      "expiresAt": 1782233912934
+    },
+    "rs": {
+      "infinite": true
+    },
+    "punish": {
+      "infinite": true
+    },
+    "blacklist": {
+      "infinite": true
+    }
+  },
+  "1476637278305779854": {
+    "rs": {
+      "infinite": true
+    },
+    "punish": {
+      "infinite": true
+    }
+  },
+  "1409452446178082837": {
+    "baknumber": {
+      "times": 30
+    },
+    "edi": {
+      "times": 5
+    }
+  },
+  "1431989097299443816": {
+    "baknumber": {
+      "times": 30
+    }
+  },
+  "663290094387724288": {
+    "blacklist": {
+      "infinite": true
+    },
+    "rs": {
+      "infinite": true
+    }
+  },
+  "1417885846937534485": {
+    "baknumber": {
+      "times": 30
+    }
+  },
+  "1519354778172264622": {
+    "edi": {
+      "times": 1000
+    },
+    "nextnumber": {
+      "times": 1000
+    }
+  }
+}

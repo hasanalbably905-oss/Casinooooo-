@@ -1,0 +1,38 @@
+{
+  "BackNumber": {
+    "name": "BackNumber",
+    "price": 30000000,
+    "description": "إرجاع آخر رقم اخترته وطرحه من المجموع (كإعادة التحرك)",
+    "enabled": true
+  },
+  "LuckyReduce": {
+    "name": "LuckyReduce",
+    "price": 50000000,
+    "description": "إذا تجاوزت، يطرح رقم عشوائي مناسب لإعادتك للحد أو تحته",
+    "enabled": true
+  },
+  "RangeHint": {
+    "name": "RangeHint",
+    "price": 15000000,
+    "description": "يظهر نطاق مجموع الخصم (فقط في وضع الأرقام المخفية)",
+    "enabled": true
+  },
+  "MirrorMove": {
+    "name": "MirrorMove",
+    "price": 75000000,
+    "description": "نسخ آخر رقم اختاره الخصم وأضفه إلى مجموعك (إذا لم تتجاوز)",
+    "enabled": true
+  },
+  "DoubleBack": {
+    "name": "DoubleBack",
+    "price": 60000000,
+    "description": "إرجاع آخر رقمين اخترتهما وطرحهما من المجموع",
+    "enabled": true
+  },
+  "ChangeMax": {
+    "name": "ChangeMax",
+    "price": 10000000,
+    "description": "طلب تغيير الرقم الأقصى (يحتاج موافقة الخصم)",
+    "enabled": true
+  }
+}
