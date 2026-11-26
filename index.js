@@ -1422,8 +1422,7 @@ async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
   const preference = String(args[1] || '').toLowerCase();
   if (['بوت', 'bot'].includes(preference)) return startBotChallenge(message, amountOf(args[2]));
-  const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
-  if (!challengeChannel || !challengeChannel.isTextBased()) return message.reply('روم عرض التحديات غير متاح حالياً.');
+  const challengeChannel = message.channel;
   if (['عام', 'فرندز'].includes(preference)) {
     const data = account(message.author.id);
     data.challenge = preference === 'عام' ? 'general' : 'friends';
@@ -1477,7 +1476,11 @@ async function challenge(message, args) {
       text: 'Golden Casino | اختر بحكمة واستمتع!',
       iconURL: client.user.displayAvatarURL(),
     });
-  const sent = await challengeChannel.send({ content: message.author.toString(), embeds: [embed], components: gameRows(g), allowedMentions: { users: [message.author.id] } }).catch(() => null);
+  const sent = await message.reply({
+    embeds: [embed],
+    components: gameRows(g),
+    allowedMentions: { repliedUser: false },
+  }).catch(() => null);
   if (!sent) { delete db.games[id]; return message.reply('تعذر إرسال التحدي.'); }
   g.message = sent.id;
   await save();
