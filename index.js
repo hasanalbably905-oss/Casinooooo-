@@ -1186,8 +1186,12 @@ async function startBotChallenge(message, amount) {
     .setPlaceholder('🔽 اختر اللعبة')
     .setMinValues(1).setMaxValues(1)
     .addOptions(
-      { label: 'بلاك جاك ضد البوت', value: 'blackjack', description: 'العب أوراقك ضد الموزّع', emoji: '🃏' },
+      { label: 'الرقم التقريبي', value: 'takribi', description: 'اختر الرقم الأقرب للرقم السري', emoji: '🎯' },
+      { label: 'البحث عن الكرة', value: 'find_ball', description: 'اعثر على الكرة تحت أحد الأكواب', emoji: '🥎' },
+      { label: 'لعبة النرد', value: 'dice', description: 'نافس البوت برمية نرد واحدة', emoji: '🎲' },
       { label: 'عجلة الحظ', value: 'wheel', description: 'اختر لوناً ودع العجلة تحدد النتيجة', emoji: '🎡' },
+      { label: 'بلاك جاك ضد البوت', value: 'blackjack', description: 'العب أوراقك ضد الموزّع', emoji: '🃏' },
+      { label: 'قلب العملة', value: 'coinflip', description: 'اختر وجه العملة قبل رميها', emoji: '🪙' },
       { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'إلغاء التحدي بدون خصم الرهان', emoji: '🚫' },
     );
   const sent = await message.reply({
@@ -1219,7 +1223,7 @@ async function botChallengeSelect(i) {
     await save();
     return i.update({ content: '❌ | **تم إلغاء تحدي البوت. لم يتم خصم أي مبلغ.**', embeds: [], components: [] });
   }
-  if (!['blackjack', 'wheel'].includes(selected)) return ephemeral(i, 'اللعبة المختارة غير متاحة حالياً.');
+  if (!['blackjack', 'wheel', 'takribi', 'find_ball', 'dice', 'coinflip'].includes(selected)) return ephemeral(i, 'اللعبة المختارة غير متاحة حالياً.');
   const wallet = account(challenge.userId);
   if (wallet.coins < challenge.stake) {
     challenge.status = 'cancelled';
@@ -1230,8 +1234,9 @@ async function botChallengeSelect(i) {
   challenge.selectedGame = selected;
   challenge.startedAt = Date.now();
   await save();
+  const labels = { blackjack: 'بلاك جاك', wheel: 'عجلة الحظ', takribi: 'الرقم التقريبي', find_ball: 'البحث عن الكرة', dice: 'النرد', coinflip: 'قلب العملة' };
   await i.update({
-    content: '✅ تم اختيار **' + (selected === 'blackjack' ? 'بلاك جاك' : 'عجلة الحظ') + '**. بدأ تحديك ضد البوت بالأسفل.',
+    content: '✅ تم اختيار **' + labels[selected] + '**. بدأ تحديك ضد البوت بالأسفل.',
     embeds: [], components: [],
   });
   const fakeMessage = {
@@ -1240,7 +1245,106 @@ async function botChallengeSelect(i) {
     reply: payload => i.message.reply(payload),
   };
   if (selected === 'blackjack') return startBlackjack(fakeMessage, challenge.stake);
-  return startWheel(fakeMessage, challenge.stake);
+  if (selected === 'wheel') return startWheel(fakeMessage, challenge.stake);
+  return startBotMiniGame(fakeMessage, challenge, selected);
+}
+
+async function startBotMiniGame(message, challenge, mode) {
+  const wallet = account(challenge.userId);
+  if (wallet.coins < challenge.stake) {
+    challenge.status = 'cancelled';
+    await save();
+    return message.reply('رصيدك لم يعد كافياً لبدء اللعبة.');
+  }
+  if (!Number.isSafeInteger(challenge.stake * (mode === 'find_ball' ? 3 : 2))) {
+    challenge.status = 'cancelled';
+    await save();
+    return message.reply('قيمة الرهان تتجاوز الحد الآمن.');
+  }
+  wallet.coins -= challenge.stake;
+  challenge.status = 'playing';
+  challenge.mode = mode;
+  challenge.secret = mode === 'find_ball' ? crypto.randomInt(3)
+    : mode === 'takribi' ? crypto.randomInt(1, 6) : null;
+  challenge.gameMessageId = null;
+  challenge.expiresAt = Date.now() + 60000;
+  await save();
+  const titles = { takribi: '🎯 الرقم التقريبي', find_ball: '🥎 البحث عن الكرة', dice: '🎲 تحدي النرد', coinflip: '🪙 قلب العملة' };
+  const descriptions = {
+    takribi: 'اختر رقماً من **1 إلى 5**. إذا طابقت الرقم السري تفوز بضعف الرهان.',
+    find_ball: 'الكرة مخبأة تحت واحد من الأكواب الثلاثة. اختر الكوب الصحيح لتحصل على **3 أضعاف الرهان**.',
+    dice: 'اضغط رمي النرد. إذا كان رقمك أعلى من البوت تفوز، وإذا تعادلتما تستعيد رهانك.',
+    coinflip: 'اختر **صورة** أو **كتابة**. إذا توقعت النتيجة الصحيحة تفوز بضعف الرهان.',
+  };
+  let rows = [];
+  if (mode === 'takribi') rows = [new ActionRowBuilder().addComponents(...[1,2,3,4,5].map(n => btn('bm:guess' + n + ':' + challenge.id, String(n), ButtonStyle.Primary)))];
+  if (mode === 'find_ball') rows = [new ActionRowBuilder().addComponents(...[0,1,2].map(n => btn('bm:cup' + n + ':' + challenge.id, ['🥤 الكوب الأول','🥤 الكوب الثاني','🥤 الكوب الثالث'][n], ButtonStyle.Secondary)))];
+  if (mode === 'dice') rows = [new ActionRowBuilder().addComponents(btn('bm:roll:' + challenge.id, '🎲 ارْمِ النرد', ButtonStyle.Success))];
+  if (mode === 'coinflip') rows = [new ActionRowBuilder().addComponents(btn('bm:heads:' + challenge.id, '🪙 صورة', ButtonStyle.Primary), btn('bm:tails:' + challenge.id, '🪙 كتابة', ButtonStyle.Secondary))];
+  const sent = await message.reply({
+    embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle(titles[mode])
+      .setDescription('**الرهان:** ' + fmt(challenge.stake) + ' كوين\\n' + descriptions[mode])
+      .setFooter({ text: 'Golden Casino • Bot Challenge' }).setTimestamp()],
+    components: rows,
+  });
+  challenge.gameMessageId = sent.id;
+  await save();
+}
+
+async function botMiniGameButton(i) {
+  const [, action, id] = i.customId.split(':');
+  const challenge = db.botChallenges[id];
+  if (!challenge || challenge.status !== 'playing') return ephemeral(i, 'هذه الجولة انتهت أو لم تعد متاحة.');
+  if (i.user.id !== challenge.userId) return ephemeral(i, 'هذه الجولة ليست لك.');
+  if (Date.now() >= challenge.expiresAt) {
+    const wallet = account(challenge.userId);
+    if (canAddCoins(wallet, challenge.stake)) wallet.coins += challenge.stake;
+    challenge.status = 'expired';
+    challenge.payout = challenge.stake;
+    await save();
+    return i.update({ content: '⌛ انتهى الوقت؛ تمت إعادة رهانك بالكامل.', embeds: [], components: [] });
+  }
+  let outcome = 'loss', detail = '', payout = 0;
+  if (challenge.mode === 'takribi' && /^guess[1-5]$/.test(action)) {
+    const guess = Number(action.slice(5));
+    detail = 'رقمك: **' + guess + '**\\nالرقم السري: **' + challenge.secret + '**';
+    outcome = guess === challenge.secret ? 'win' : 'loss';
+  } else if (challenge.mode === 'find_ball' && /^cup[0-2]$/.test(action)) {
+    const cup = Number(action.slice(3));
+    detail = 'اخترت الكوب رقم **' + (cup + 1) + '**. الكرة كانت في الكوب رقم **' + (challenge.secret + 1) + '**.';
+    outcome = cup === challenge.secret ? 'win' : 'loss';
+  } else if (challenge.mode === 'dice' && action === 'roll') {
+    const player = crypto.randomInt(1, 7), bot = crypto.randomInt(1, 7);
+    detail = '🎲 نتيجتك: **' + player + '**\\n🤖 نتيجة البوت: **' + bot + '**';
+    outcome = player > bot ? 'win' : player === bot ? 'draw' : 'loss';
+  } else if (challenge.mode === 'coinflip' && ['heads','tails'].includes(action)) {
+    const landed = crypto.randomInt(2) === 0 ? 'heads' : 'tails';
+    detail = 'اختيارك: **' + (action === 'heads' ? 'صورة' : 'كتابة') + '**\\nالنتيجة: **' + (landed === 'heads' ? 'صورة' : 'كتابة') + '**';
+    outcome = action === landed ? 'win' : 'loss';
+  } else return ephemeral(i, 'هذا الاختيار غير صالح لهذه اللعبة.');
+  const wallet = account(challenge.userId);
+  if (outcome === 'win') payout = challenge.stake * (challenge.mode === 'find_ball' ? 3 : 2);
+  else if (outcome === 'draw') payout = challenge.stake;
+  if (payout > 0 && !canAddCoins(wallet, payout)) {
+    payout = challenge.stake;
+    outcome = 'refunded';
+  }
+  if (payout > 0) wallet.coins += payout;
+  challenge.status = 'finished';
+  challenge.outcome = outcome;
+  challenge.payout = payout;
+  challenge.finishedAt = Date.now();
+  await save();
+  const result = outcome === 'win' ? '🎉 **فزت!** استلمت **' + fmt(payout) + '** كوين.'
+    : outcome === 'draw' ? '🤝 **تعادل!** تمت إعادة رهانك.'
+    : outcome === 'refunded' ? 'تمت إعادة الرهان لحماية رصيدك.'
+    : '❌ **خسرت الجولة.**';
+  return i.update({
+    embeds: [new EmbedBuilder().setColor(outcome === 'win' ? 0x2ecc71 : outcome === 'draw' || outcome === 'refunded' ? 0xf1c40f : 0xe74c3c)
+      .setTitle('🎮 نتيجة التحدي ضد البوت').setDescription(detail + '\\n\\n' + result)
+      .setFooter({ text: 'Golden Casino • Bot Challenge' }).setTimestamp()],
+    components: [],
+  });
 }
 
 async function startBlackjack(message, amount) {
@@ -2367,6 +2471,7 @@ client.on('interactionCreate', async i => {
     const parts = i.customId.split(':');
     const family = parts[0];
     if (i.customId === 'r:buy') return withLock('private-room-buy:' + i.user.id, () => buyPrivateRoom(i));
+    if (i.customId.startsWith('bm:')) return withLock('bot-mini:' + i.customId.split(':')[2], () => botMiniGameButton(i));
     if (i.customId.startsWith('bj:')) return withLock('blackjack:' + i.customId.split(':')[2], () => blackjackButton(i));
     if (i.customId.startsWith('wh:')) return withLock('wheel:' + i.customId.split(':')[2], () => wheelButton(i));
     if (!['t', 'c', 'g', 'w', 'l'].includes(family)) return;
