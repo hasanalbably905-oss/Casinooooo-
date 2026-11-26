@@ -2365,7 +2365,7 @@ client.on('messageCreate', async message => {
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
-    if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة', 'hide', 'اخفاء', 'إخفاء', 'show', 'اظهار', 'إظهار', 'unallow', 'منع', 'reallow', 'سماح'].includes(cmd)) {
+    if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة', 'hide', 'اخفاء', 'إخفاء', 'show', 'اظهار', 'إظهار', 'unallow', 'منع', 'reallow', 'سماح', 'rename', 'تسمية', 'اسم', 'اعضاء-الروم', 'roommembers'].includes(cmd)) {
       const handled = await privateRoomCommand(message, args);
       if (handled !== false) return handled;
     }
