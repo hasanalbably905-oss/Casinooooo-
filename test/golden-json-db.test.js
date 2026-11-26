@@ -30,3 +30,21 @@ test('JSON model supports create, query, update operators and persistence', asyn
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('JSON model supports document save and findOneAndUpdate upsert', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'golden-json-doc-'));
+  const filePath = path.join(dir, 'store.json');
+  try {
+    const db = createJsonDatabase({ filePath });
+    const Model = db.model('records');
+    const doc = new Model({ id: 'doc-1', value: 2 });
+    await doc.save();
+    doc.value = 3;
+    await doc.save();
+    const after = await Model.findOneAndUpdate({ id: 'new' }, { $set: { value: 7 } }, { upsert: true, new: true });
+    assert.equal(after.value, 7);
+    assert.equal(await Model.countDocuments({}), 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
