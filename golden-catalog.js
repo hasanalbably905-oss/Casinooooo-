@@ -133,7 +133,7 @@ async function handleGoldenCatalog(message, options = {}) {
     return true;
   }
   if (command === 'ahelp') {
-    if (!options.ownerId || message.author.id !== String(options.ownerId)) {
+    if (!(Array.isArray(options.ownerIds) ? options.ownerIds : [options.ownerId]).filter(Boolean).map(String).includes(String(message.author.id))) {
       await message.reply('🚫 هذا الأمر مخصص للأونرز فقط.');
       return true;
     }
