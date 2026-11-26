@@ -246,6 +246,17 @@ function amountOf(input) {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
+function isCasinoOwner(userId) {
+  return Array.isArray(CFG.owners) && CFG.owners.includes(String(userId));
+}
+function applyOwnerAdvantage(players, winner) {
+  const owners = players.filter(isCasinoOwner);
+  if (owners.length !== 1) return { winner, boosted: false };
+  const ownerId = owners[0];
+  if (winner === ownerId) return { winner, boosted: false };
+  if (crypto.randomInt(100) < 75) return { winner: ownerId, boosted: true };
+  return { winner, boosted: false };
+}
 const admin = id => CFG.owners.includes(String(id)) || CFG.admins.includes(String(id));
 function active(id, excludeId) {
   return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
@@ -1196,7 +1207,7 @@ async function startBotChallenge(message, amount) {
       { label: 'الأبراج', value: 'towers', description: 'اختر مستوى الصعوبة وتسلق خمسة مستويات', emoji: '🗼' },
       { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'قم بإلغاء التحدي الحالي.', emoji: '🚫' },
     );  const sent = await message.reply({
-    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
+    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`' + (isCasinoOwner(message.author.id) ? '\n👑 **ميزة الأونر مفعلة: أفضلية 75% عند اللعب ضد البوت.**' : '') + '\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
     components: [new ActionRowBuilder().addComponents(menu)],
   }).catch(() => null);
   if (!sent) {
@@ -1255,6 +1266,12 @@ async function botChallengeSelect(i) {
 
 async function settleGoldenBotGame(challenge, outcome, detail, multiplier = 0.93) {
   if (!challenge || ['finished', 'cancelled', 'expired'].includes(challenge.status)) return;
+  let ownerBoosted = false;
+  if (isCasinoOwner(challenge.userId) && outcome !== 'win' && crypto.randomInt(100) < 75) {
+    outcome = 'win';
+    ownerBoosted = true;
+  }
+  if (ownerBoosted) detail += '\n👑 تم تفعيل ميزة الأونر في هذه الجولة.';
   const wallet = account(challenge.userId);
   let payout = 0;
   if (outcome === 'win') {
@@ -2091,6 +2108,9 @@ async function editGame(g, title, description, components) {
 }
 async function settle(g, winner, result) {
   if (!g || g.status !== 'playing') return;
+  const ownerResult = applyOwnerAdvantage([g.p1, g.p2], winner);
+  winner = ownerResult.winner;
+  if (ownerResult.boosted) result += '\n👑 تم تفعيل ميزة الأونر بنسبة أفضلية 75% في هذه المواجهة.';
   g.status = 'finished';
   if (winner) {
     const loser = winner === g.p1 ? g.p2 : g.p1;
@@ -2254,6 +2274,7 @@ async function gameButton(i, parts) {
         '> المبلغ الذي قمت بتحديده: `' + fmt(g.bet) + '`'
       )
       .addFields({ name: details.name, value: details.value }, { name: 'المبلغ:', value: fmt(g.bet) })
+      .addFields({ name: '👑 ميزة الأونر', value: 'إذا شارك أحد الأونرز، يحصل على أفضلية فوز بنسبة 75% في هذه المواجهة.' })
       .setFooter({ text: 'Batoot Casino | بانتظار موافقة اللاعب' });
     await save();
     await i.deferReply({ ephemeral: true });
