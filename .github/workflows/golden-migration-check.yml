@@ -1,4 +1,4 @@
-name: Golden migration checks v2
+name: Golden migration checks v3
 on:
   push:
     branches: [migration/json-games]
