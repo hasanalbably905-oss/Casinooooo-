@@ -1922,7 +1922,9 @@ async function privateRoomCommand(message, args) {
   return false;
 }
 async function challenge(message, args) {
-  if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
+  const activePrivateRoom = db.privateRooms[message.channel.id];
+  const isActivePrivateRoom = Boolean(activePrivateRoom && activePrivateRoom.status === 'active');
+  if (!CFG.gameRooms.includes(message.channel.id) && !isActivePrivateRoom) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب أو الرومات الخاصة النشطة.');
   const preference = String(args[1] || '').toLowerCase();
   if (['بوت', 'bot'].includes(preference)) return startBotChallenge(message, amountOf(args[2]));
   const challengeChannel = message.channel;
