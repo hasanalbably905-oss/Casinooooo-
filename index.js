@@ -12,6 +12,7 @@ const {
 const { handleGoldenCatalog } = require('./golden-catalog');
 const { handleGoldenSocial } = require('./golden-social');
 const { handleGoldenUtilities } = require('./golden-utilities');
+const { handleGoldenExtras } = require('./golden-extras');
 const { rpsWinner, xoWinner, xoIsDraw } = require('./golden-game-rules');
 
 const CFG = {
@@ -1519,6 +1520,7 @@ client.on('messageCreate', async message => {
   const cmd = args[0].toLowerCase();
   try {
     if (await handleGoldenUtilities(message, { isAdmin: admin })) return;
+    if (await handleGoldenExtras(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305', suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID || '1504204169991426341' })) return;
     if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305' })) return;
     if (await handleGoldenCatalog(message, { ownerId: CFG.owner })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
