@@ -813,11 +813,12 @@ async function balance(message, user) {
   await save();
 
   // Keep the original balance command appearance and reply behavior.
+  const shownBalance = data.hideBalance === true ? 0 : data.coins;
   const embed = new EmbedBuilder()
     .setColor('Gold')
     .setThumbnail(user.displayAvatarURL({ forceStatic: false }))
     .setTitle('الرصيد الحالي لـ ' + user.username)
-    .setDescription('**' + fmt(data.coins) + ' كوين**')
+    .setDescription('**' + fmt(shownBalance) + ' كوين**')
     .setFooter({ text: message.guild.name })
     .setTimestamp();
 
@@ -1547,7 +1548,7 @@ client.on('messageCreate', async message => {
     if (['توب', 'top'].includes(cmd)) {
       await message.guild.members.fetch().catch(() => {});
       const ranked = Object.entries(db.users)
-        .filter(([id]) => message.guild.members.cache.has(id))
+        .filter(([id, data]) => message.guild.members.cache.has(id) && data.hideBalance !== true)
         .sort((a, b) => b[1].coins - a[1].coins)
         .slice(0, 10);
       const lines = ranked.map(([id, data], i) =>
@@ -1562,8 +1563,55 @@ client.on('messageCreate', async message => {
         .setTimestamp();
       return message.reply({ embeds: [embed] });
     }
-    if (cmd === 'add') return adminBalance(message, args, true);
-    if (['rmv', 'remove'].includes(cmd)) return adminBalance(message, args, false);
+    if (['hideme', 'اخفاء-رصيدي'].includes(cmd)) {
+      const wallet = account(message.author.id);
+      if (wallet.hideBalance === true) return message.reply('🔒 رصيدك مخفي بالفعل. استخدم `unhideme` لإظهاره.');
+      wallet.hideBalance = true;
+      await save();
+      return message.reply('🔒 تم إخفاء رصيدك من أمر فلوس والترتيب. رصيدك الحقيقي لم يتغير.');
+    }
+    if (['unhideme', 'اظهار-رصيدي'].includes(cmd)) {
+      const wallet = account(message.author.id);
+      if (wallet.hideBalance !== true) return message.reply('رصيدك ظاهر بالفعل.');
+      wallet.hideBalance = false;
+      await save();
+      return message.reply('🔓 تم إظهار رصيدك مجدداً.');
+    }
+    if (['tax', 'ضريبة', 'ضريبه'].includes(cmd)) {
+      const amount = amountOf(args.slice(1).join(''));
+      if (!amount) return message.reply('الاستخدام: `tax 1m` أو `ضريبة 500k`');
+      const total = Math.floor(amount * 20 / 19 + 1);
+      const tax = total - amount;
+      return message.reply({ embeds: [makeEmbed('🧾 حاسبة الضريبة',
+        'المبلغ الصافي: **' + fmt(amount) + '** كوين\nالضريبة: **' + fmt(tax) + '** كوين\nالمبلغ المطلوب إرساله: **' + fmt(total) + '** كوين').setColor(0x3498db)] });
+    }
+    if (['totalcoins', 'مجموع-الفلوس'].includes(cmd)) {
+      if (!admin(message.author.id)) return message.reply('هذا الأمر للإدارة فقط.');
+      const total = Object.values(db.users).reduce((sum, user) => sum + (Number.isSafeInteger(Number(user.coins)) && Number(user.coins) > 0 ? Number(user.coins) : 0), 0);
+      return message.reply({ embeds: [makeEmbed('💰 مجموع أرصدة الأعضاء', 'الإجمالي: **' + fmt(total) + '** كوين\nعدد الحسابات: **' + fmt(Object.keys(db.users).length) + '**').setColor(0x2ecc71)] });
+    }
+    if (['totalwithdraw', 'مجموع-السحوبات'].includes(cmd)) {
+      if (!admin(message.author.id)) return message.reply('هذا الأمر للإدارة فقط.');
+      const rows = Object.values(db.withdrawals || {});
+      const approved = rows.filter(row => row && row.status === 'approved');
+      const total = approved.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+      return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
+        'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
+    }
+    if (cmd === 'setmoney') {
+      if (String(message.author.id) !== String(CFG.owner)) return message.reply('هذا الأمر للأونر فقط.');
+      const target = await targetUser(message, args[1]);
+      const amount = amountOf(args[2]);
+      if (!target || !amount) return message.reply('الاستخدام: `setmoney @عضو 500k`');
+      const wallet = account(target.id);
+      const previous = wallet.coins;
+      wallet.coins = amount;
+      logAdminAction({ admin: message.author.id, target: target.id, amount, action: 'تعيين الرصيد (كان ' + fmt(previous) + ')', balanceAfter: amount });
+      await save();
+      return message.reply('✅ تم تعيين رصيد ' + target + ' إلى **' + fmt(amount) + '** كوين.');
+    }
+    if (['add', 'اضافة', 'إضافة'].includes(cmd)) return adminBalance(message, args, true);
+    if (['rmv', 'remove', 'ازالة', 'إزالة'].includes(cmd)) return adminBalance(message, args, false);
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
