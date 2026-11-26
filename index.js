@@ -105,6 +105,7 @@ async function loadGitHubData() {
       ? localUsers
       : remoteUsers;
     db.games = parsed.games || {};
+    db.redeemCodes = parsed.redeemCodes || {};
     db.wheel = parsed.wheel || {};
     db.withdrawals = parsed.withdrawals || {};
     db.processedTransfers = parsed.processedTransfers || {};
