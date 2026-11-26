@@ -694,7 +694,7 @@ async function challenge(message, args) {
     .setDescription('> العضو: ' + user.toString() + '\n\nالمبلغ: `' + fmt(bet) + '`')
     .addFields(
       { name: 'لعبة النرد 🎲', value: '> يفوز الذي يحصل على أعلى مجموع من ثلاث مرات, التعادل ليس فوزا !' },
-      { name: 'الرقم التقريبي 📊', value: '> في كل جولة سوف تحصل على رقم عشوائي, و انت عليك ان تحصل على نفس الرقم او اقل منه, الذي يحصل عليه يفوز, في حال الحصول على اعلى تعتبر خاسر, جولة واحدة لكل تحدي ! انهاء الجولة يعني انهاء التحدي, التعادل ليس فوزا !' },
+      { name: 'الرقم التقريبي 📊', value: '> حاول الوصول إلى الرقم المستهدف أو الاقتراب منه قدر الإمكان. لا يهم إذا كان مجموعك أعلى أو أقل؛ الفائز هو صاحب أقل فرق بين مجموعه والرقم المستهدف. عند تساوي الفرق تنتهي اللعبة بالتعادل ويُعاد الرهان.' },
     );
   const sent = await message.reply({ embeds: [embed], components: gameRows(g), allowedMentions: { repliedUser: false } }).catch(() => null);
   if (!sent) { delete db.games[id]; return message.reply('تعذر إرسال التحدي.'); }
@@ -864,15 +864,14 @@ async function finishApproximateTurn(g, reason) {
   }
   const a = g.closeSums[g.p1];
   const b = g.closeSums[g.p2];
-  const aSafe = a <= g.closeMax;
-  const bSafe = b <= g.closeMax;
-  let winner = null;
-  if (aSafe !== bSafe) winner = aSafe ? g.p1 : g.p2;
-  else if (aSafe && bSafe && a !== b) winner = a > b ? g.p1 : g.p2;
-  const result = 'اقصى رقم: **' + g.closeMax + '**\n' +
-    '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '**\n' +
-    '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '**' +
-    (reason ? '\n' + reason : '');
+  const aDiff = Math.abs(a - g.closeMax);
+  const bDiff = Math.abs(b - g.closeMax);
+  const winner = aDiff === bDiff ? null : (aDiff < bDiff ? g.p1 : g.p2);
+  const result = 'الرقم المستهدف: **' + g.closeMax + '**\\n' +
+    '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '** (الفرق: **' + aDiff + '** )\\n' +
+    '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '** (الفرق: **' + bDiff + '** )\\n' +
+    (winner ? 'الفائز هو الأقرب إلى الرقم المستهدف، سواء كان مجموعه أعلى أو أقل.' : 'تعادل! اللاعبان على نفس البعد من الرقم المستهدف.') +
+    (reason ? '\\n' + reason : '');
   await settle(g, winner, result);
 }
 async function gameButton(i, parts) {
@@ -972,16 +971,16 @@ async function gameButton(i, parts) {
     if (total >= g.closeMax) {
       await i.followUp({
         content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\n' +
-          (total === g.closeMax ? 'تهانينا، حصلت على الرقم المطلوب وتم إنهاء دورك.' : 'يا للأسف، لقد تخطيت الرقم المطلوب وتم إنهاء دورك.'),
+          (total === g.closeMax ? 'ممتاز! وصلت إلى الرقم المستهدف تماماً وتم إنهاء دورك.' : 'تجاوزت الرقم المستهدف، وسيتم احتسابك حسب الأقرب إليه سواء أعلى أو أقل.'),
         ephemeral: true,
       }).catch(() => {});
-      await finishApproximateTurn(g, total === g.closeMax ? 'وصل إلى الحد الأقصى.' : 'تجاوز الحد الأقصى.');
+      await finishApproximateTurn(g, total === g.closeMax ? 'وصل إلى الرقم المستهدف تماماً.' : 'تجاوز الرقم المستهدف؛ ويُحسب الفائز حسب أقرب مجموع.');
       return;
     }
     await save();
     await editGame(g, 'لعبة الرقم التقريبي', '<@' + uid + '>\n اصبح مجموعك **' + total + '** — أكمل أو اضغط finish لإنهاء دورك.', gameRows(g));
     await i.followUp({
-      content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\nانتبه ألا يصبح مجموعك أعلى من الرقم المطلوب؛ يمكنك إنهاء دورك بالضغط على finish.',
+      content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\nحاول الاقتراب من الرقم المستهدف؛ يمكنك إنهاء دورك بالضغط على finish.',
       ephemeral: true,
     }).catch(() => {});
     return;
