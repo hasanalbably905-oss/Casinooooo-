@@ -1452,6 +1452,10 @@ async function buyPrivateRoom(i) {
   if (existing) return ephemeral(i, 'لديك روم خاصة بالفعل: <#' + existing.channelId + '>.');
   const price = privateRoomPrice();
   const wallet = account(i.user.id);
+  if (active(i.user.id)) return ephemeral(i, 'لا يمكنك حجز روم أثناء وجود تحدٍ أو لعبة نشطة.');
+  if (Object.values(db.withdrawals || {}).some(row => row && row.user === i.user.id && row.status === 'pending')) return ephemeral(i, 'لديك طلب سحب قيد المعالجة؛ أكمله قبل حجز الروم.');
+  if (Object.values(db.transfers || {}).some(row => row && row.status === 'pending' && (row.from === i.user.id || row.to === i.user.id))) return ephemeral(i, 'لديك عملية تحويل معلقة؛ أكملها قبل حجز الروم.');
+  if (Object.values(db.linkedWithdrawals || {}).some(row => row && row.status === 'pending' && (row.from === i.user.id || row.to === i.user.id))) return ephemeral(i, 'لديك طلب سحب من محفظة مرتبطة قيد الانتظار.');
   if (wallet.coins < price) return ephemeral(i, 'رصيدك غير كافٍ. السعر: **' + fmt(price) + '** كوين.');
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
   const panel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
@@ -1469,19 +1473,54 @@ async function buyPrivateRoom(i) {
     ],
   }).catch(error => { console.error('Private room create failed:', error); return null; });
   if (!channel) return ephemeral(i, 'تعذر إنشاء الروم. لم يتم خصم أي مبلغ من رصيدك.');
-  wallet.coins -= price;
+  const createdAt = Date.now();
   const room = {
     channelId: channel.id, owner: i.user.id, status: 'active',
-    createdAt: Date.now(), expiresAt: Date.now() + CFG.rentDurationMs,
-    addedMembers: [], price,
+    createdAt, expiresAt: createdAt + CFG.rentDurationMs,
+    addedMembers: [], mutedMembers: [], price,
   };
+  const announcement = await channel.send({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 رومك الخاصة')
+    .addFields(
+      { name: '> صاحب الروم :', value: '<@' + i.user.id + '>', inline: false },
+      { name: '> تبقي من مدة الروم :', value: '12 ساعة', inline: false },
+      { name: '> سعر الحجز :', value: fmt(price) + ' كوين', inline: false },
+    )
+    .setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp()] }).catch(error => {
+      console.error('Private room announcement failed:', error);
+      return null;
+    });
+  if (!announcement) {
+    await channel.delete('فشل إرسال تفاصيل الروم').catch(() => {});
+    return ephemeral(i, 'تعذر إكمال إنشاء الروم. لم يتم خصم أي مبلغ.');
+  }
+  room.announcementMessageId = announcement.id;
+  wallet.coins -= price;
   db.privateRooms[channel.id] = room;
-  await channel.send({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 رومك الخاصة')
-    .setDescription('صاحب الروم: <@' + i.user.id + '>\nالمدة: **12 ساعة**\nالسعر المدفوع: **' + fmt(price) + '** كوين\nتنتهي: <t:' + Math.floor(room.expiresAt / 1000) + ':R>\n\nإضافة عضو: `add @عضو`\nإزالة عضو: `rem @عضو`\nعرض التفاصيل: `رومي`')
-    .setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp()] });
   await save();
   await refreshPrivateRoomPanel();
   return ephemeral(i, '✅ تم حجز رومك الخاصة: <#' + channel.id + '>\nتم خصم **' + fmt(price) + '** كوين من محفظتك.');
+}
+function privateRoomTimeLeft(expiresAt) {
+  const ms = Math.max(0, Number(expiresAt) - Date.now());
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return days + ' يوم، ' + hours + ' ساعة، ' + minutes + ' دقيقة، و' + seconds + ' ثانية';
+}
+async function updatePrivateRoomStatus(room) {
+  if (!room || room.status !== 'active' || !room.announcementMessageId) return;
+  const channel = await client.channels.fetch(room.channelId).catch(() => null);
+  if (!channel || !channel.isTextBased()) return;
+  const msg = await channel.messages.fetch(room.announcementMessageId).catch(() => null);
+  if (!msg) return;
+  const embed = new EmbedBuilder().setColor(0xf1c40f)
+    .addFields(
+      { name: '> صاحب الروم :', value: '<@' + room.owner + '>', inline: false },
+      { name: '> تبقي من مدة الروم :', value: privateRoomTimeLeft(room.expiresAt), inline: false },
+    )
+    .setThumbnail(channel.guild.iconURL({ dynamic: true }) || null);
+  await msg.edit({ embeds: [embed] }).catch(() => {});
 }
 async function expirePrivateRoom(room) {
   if (!room || room.status !== 'active') return;
@@ -1825,7 +1864,9 @@ async function sweep() {
     if (game && game.status === 'playing' && Number(game.expiresAt) <= now) await finishBlackjack(game, 'expired');
   }
   for (const room of Object.values(db.privateRooms || {})) {
-    if (room && room.status === 'active' && Number(room.expiresAt) <= now) await expirePrivateRoom(room);
+    if (!room || room.status !== 'active') continue;
+    if (Number(room.expiresAt) <= now) await expirePrivateRoom(room);
+    else await updatePrivateRoomStatus(room);
   }
   for (const g of Object.values(db.games)) {
     if (!g || !g.expires || g.expires > now) continue;
@@ -2280,6 +2321,11 @@ client.on('messageCreate', async message => {
   if (CFG.guild && message.guild.id !== CFG.guild) return;
   const text = message.content.trim();
   if (!text) return;
+  const roomState = db.privateRooms[message.channel.id];
+  if (roomState && roomState.status === 'active' && Array.isArray(roomState.mutedMembers) && roomState.mutedMembers.includes(message.author.id)) {
+    await message.delete().catch(() => {});
+    return;
+  }
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
