@@ -817,11 +817,30 @@ async function adminBalance(message, args, add) {
 }
 async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
+  const preference = String(args[1] || '').toLowerCase();
+  if (['عام', 'فرندز'].includes(preference)) {
+    const data = account(message.author.id);
+    data.challenge = preference === 'عام' ? 'general' : 'friends';
+    await save();
+    return message.reply(preference === 'عام'
+      ? 'تم تغيير إعداد استقبال التحديات إلى عام.'
+      : 'تم تغيير إعداد استقبال التحديات إلى الأصدقاء فقط.');
+  }
   const user = await targetUser(message, args[1]);
   const bet = amountOf(args[2]);
   if (!user || user.bot || user.id === message.author.id || !bet) return message.reply('الاستخدام: تحدي @العضو المبلغ');
   if (bet > Math.floor(Number.MAX_SAFE_INTEGER / 2)) return message.reply('قيمة الرهان أكبر من الحد الآمن.');
   if (active(message.author.id) || active(user.id)) return message.reply('أحد اللاعبين لديه تحدٍ لم ينتهِ بعد.');
+  const challengerData = account(message.author.id);
+  const opponentData = account(user.id);
+  if ((challengerData.blocked || []).includes(user.id) || (opponentData.blocked || []).includes(message.author.id)) {
+    return message.reply('لا يمكنك تحدي هذا اللاعب لأن أحدكما حظر الآخر.');
+  }
+  if (challengerData.challenge === 'friends' || opponentData.challenge === 'friends') {
+    if (!(challengerData.friends || []).includes(user.id) || !(opponentData.friends || []).includes(message.author.id)) {
+      return message.reply('لا يمكنك تحدي هذا اللاعب لأن أحدكما يستقبل التحديات من الأصدقاء فقط.');
+    }
+  }
   if (account(message.author.id).coins < bet) return message.reply('❎ **ليس لديك ما يكفي للتحدي على ' + fmt(bet) + '**');
   if (account(user.id).coins < bet) return message.reply('❎ **ليس لدى صديقك ما يكفي للتحدي على ' + fmt(bet) + '**');
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
