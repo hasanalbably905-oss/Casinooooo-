@@ -104,7 +104,7 @@ async function handleAdminCommands(message, options = {}) {
     if (!me?.permissions.has(PermissionFlagsBits.ManageMessages)) return fail('البوت لا يملك صلاحية إدارة الرسائل.');
     const count = Number(args[0]);
     if (!Number.isInteger(count) || count < 1 || count > 100) return fail('الاستخدام: clear 1-100');
-    const deleted = await message.channel.bulkDelete(count + 1, true);
+    const deleted = await message.channel.bulkDelete(count, true);
     const notice = await message.channel.send('🧹 تم حذف ' + Math.max(0, deleted.size - 1) + ' رسالة.');
     setTimeout(() => notice.delete().catch(() => {}), 4000);
     return true;
