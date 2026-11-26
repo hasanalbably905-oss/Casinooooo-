@@ -1,0 +1,49 @@
+name: Extract Golden archive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate and extract archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Golden v (1).zip"
+          test -f "$archive"
+          while IFS= read -r entry; do
+            case "$entry" in
+              /*|..|../*|*/../*|*/..)
+                echo "Unsafe archive path: $entry"
+                exit 1
+                ;;
+            esac
+          done < <(unzip -Z1 "$archive")
+          rm -rf legacy-golden
+          mkdir -p legacy-golden
+          unzip -q "$archive" -d legacy-golden
+          find legacy-golden -type f | sort
+
+      - name: Publish extracted files on a separate branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="golden-extracted-${GITHUB_RUN_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add legacy-golden
+          git commit -m "Extract Golden archive for feature review"
+          git push origin "$branch"
+          echo "Extracted files published on branch: $branch"
