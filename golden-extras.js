@@ -22,6 +22,28 @@ async function handleGoldenExtras(message, options = {}) {
   if (fullText.toLowerCase() === 'برايم دايلي') { args.length = 0; }
   const me = options.account(message.author.id);
 
+  if (['بري', 'بريميوم', 'prime'].includes(cmd)) {
+    const expiry = typeof me.primeExpires === 'number'
+      ? me.primeExpires
+      : (Date.parse(me.primeExpires) || 0);
+    const active = expiry > Date.now();
+    const embed = new EmbedBuilder()
+      .setColor(active ? 0xf1c40f : 0x808080)
+      .setTitle('👑 حالة اشتراك Prime')
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .setDescription(active
+        ? 'اشتراك Prime الخاص بك **نشط** وينتهي ' + '<t:' + Math.floor(expiry / 1000) + ':F>' + ' (' + '<t:' + Math.floor(expiry / 1000) + ':R>' + ').'
+        : 'لا يوجد اشتراك Prime نشط على حسابك حالياً.')
+      .addFields(
+        { name: 'الكاش باك', value: active ? 'مضاعف ×2' : 'عادي', inline: true },
+        { name: 'مكافأة Prime اليومية', value: active ? 'متاحة كل 24 ساعة' : 'غير متاحة', inline: true },
+      )
+      .setFooter({ text: 'Golden Casino • Prime' })
+      .setTimestamp();
+    await message.reply({ embeds: [embed] });
+    return true;
+  }
+
   if (cmd === 'ريب') {
     const roleId = String(options.premiumRoleId || '');
     if (!roleId || !message.member?.roles.cache.has(roleId)) {
