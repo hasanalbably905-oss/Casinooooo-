@@ -1191,7 +1191,7 @@ async function startBotChallenge(message, amount) {
       { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'إلغاء التحدي بدون خصم الرهان', emoji: '🚫' },
     );
   const sent = await message.reply({
-    content: '🔥 | **تحدي بوت جديد!**\\n💰 **المبلغ المحدد:** \`' + fmt(amount) + '\` كوين\\n\\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
+    content: '🔥 | **تحدي بوت جديد!**\n💰 **المبلغ المحدد:** \`' + fmt(amount) + '\` كوين\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
     components: [new ActionRowBuilder().addComponents(menu)],
   }).catch(() => null);
   if (!sent) {
