@@ -1412,14 +1412,14 @@ function activePrivateRooms() {
 }
 function privateRoomPanelEmbed() {
   const price = privateRoomPrice();
-  const available = Math.max(0, 5 - activePrivateRooms().length);
+  const available = Math.max(0, 10 - activePrivateRooms().length);
   return new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 | Golden Casino • الرومات الخاصة')
     .setDescription(
       '> احجز روم خاصة لك ولأصدقائك داخل السيرفر.\n' +
-      '> يمكنك إضافة حتى **5 أعضاء** إلى رومك.\n' +
+      ' > يمكنك إضافة حتى **10 أعضاء** إلى رومك.\n' +
       '> مدة الحجز: **12 ساعة**.\n' +
       '> سعر الحجز: **' + fmt(price) + ' كوين**.\n' +
-      '> الرومات المتاحة حالياً: **' + available + '/5**.\n\n' +
+      '> الرومات المتاحة حالياً: **' + available + '/10**.\n\n' +
       '**داخل رومك:** استخدم `add @عضو` و `rem @عضو` لإدارة الأعضاء، و`رومي` لمعرفة وقت الانتهاء.'
     ).setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp();
 }
@@ -1447,7 +1447,7 @@ async function refreshPrivateRoomPanel() {
   else await ensurePrivateRoomPanel();
 }
 async function buyPrivateRoom(i) {
-  if (activePrivateRooms().length >= 5) return ephemeral(i, 'عذراً، جميع الرومات الخاصة الخمس محجوزة حالياً.');
+  if (activePrivateRooms().length >= 10) return ephemeral(i, 'عذراً، جميع الرومات الخاصة العشر محجوزة حالياً.');
   const existing = activePrivateRooms().find(room => room.owner === i.user.id);
   if (existing) return ephemeral(i, 'لديك روم خاصة بالفعل: <#' + existing.channelId + '>.');
   const price = privateRoomPrice();
@@ -1505,11 +1505,11 @@ async function privateRoomCommand(message, args) {
   if (!current || current.status !== 'active') return false;
   if (current.owner !== message.author.id) return message.reply('إدارة الروم الخاصة متاحة لصاحب الروم فقط.');
   if (['add', 'اضافة', 'إضافة'].includes(cmd)) {
-    const user = message.mentions.users.first();
-    if (!user || user.bot || user.id === current.owner) return message.reply('استخدم: `add @عضو`');
+    const user = message.mentions.users.first() || await message.client.users.fetch(String(args[1] || '').replace(/[<@!>]/g, '')).catch(() => null);
+    if (!user || user.bot || user.id === current.owner) return message.reply('استخدم: `add @عضو` أو `add USER_ID`');
     if (CFG.owners.includes(String(user.id))) return message.reply('لا يمكن إضافة أحد الأونرز إلى قائمة أعضاء الروم.');
     if ((current.addedMembers || []).includes(user.id)) return message.reply('هذا العضو موجود بالفعل في الروم.');
-    if ((current.addedMembers || []).length >= 5) return message.reply('الحد الأعلى هو 5 أعضاء إضافيين.');
+    if ((current.addedMembers || []).length >= 10) return message.reply('الحد الأعلى هو 10 أعضاء إضافيين.');
     const member = await message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return message.reply('يجب أن يكون العضو في السيرفر.');
     await message.channel.permissionOverwrites.edit(user.id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
@@ -1519,8 +1519,8 @@ async function privateRoomCommand(message, args) {
     return message.reply('✅ تمت إضافة ' + user + ' إلى الروم.');
   }
   if (['rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
-    const user = message.mentions.users.first();
-    if (!user || !(current.addedMembers || []).includes(user.id)) return message.reply('استخدم: `rem @عضو` لعضو مضاف إلى الروم.');
+    const user = message.mentions.users.first() || await message.client.users.fetch(String(args[1] || '').replace(/[<@!>]/g, '')).catch(() => null);
+    if (!user || !(current.addedMembers || []).includes(user.id)) return message.reply('استخدم: `rem @عضو` أو `rem USER_ID` لعضو مضاف إلى الروم.');
     await message.channel.permissionOverwrites.delete(user.id).catch(() => {});
     current.addedMembers = current.addedMembers.filter(id => id !== user.id);
     await save();
@@ -1533,27 +1533,25 @@ async function privateRoomCommand(message, args) {
     return message.reply('🔒 تم إخفاء الروم عن بقية أعضاء السيرفر. أنت والأعضاء المضافون ما زلتم قادرين على الدخول.');
   }
   if (['show', 'اظهار', 'إظهار'].includes(cmd)) {
-    await message.channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
+    await message.channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true, SendMessages: false });
     current.hidden = false;
     await save();
     return message.reply('🔓 تم إظهار الروم لجميع أعضاء السيرفر.');
   }
   if (['unallow', 'منع'].includes(cmd)) {
-    const user = message.mentions.users.first();
+    const user = message.mentions.users.first() || await message.client.users.fetch(String(args[1] || '').replace(/[<@!>]/g, '')).catch(() => null);
     if (!user || user.id === current.owner || user.bot) return message.reply('استخدم: `unallow @عضو`، ولا يمكن منع صاحب الروم أو البوتات.');
     if (CFG.owners.includes(String(user.id))) return message.reply('لا يمكن منع أحد الأونرز من الروم.');
     const member = await message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return message.reply('يجب أن يكون العضو في السيرفر.');
-    await message.channel.permissionOverwrites.edit(user.id, { SendMessages: false });
     current.mutedMembers = Array.isArray(current.mutedMembers) ? current.mutedMembers : [];
     if (!current.mutedMembers.includes(user.id)) current.mutedMembers.push(user.id);
     await save();
     return message.reply('🔇 تم منع ' + user + ' من الكتابة في الروم.');
   }
   if (['reallow', 'سماح'].includes(cmd)) {
-    const user = message.mentions.users.first();
-    if (!user || !(current.mutedMembers || []).includes(user.id)) return message.reply('استخدم: `reallow @عضو` لعضو ممنوع من الكتابة.');
-    await message.channel.permissionOverwrites.edit(user.id, { SendMessages: true });
+    const user = message.mentions.users.first() || await message.client.users.fetch(String(args[1] || '').replace(/[<@!>]/g, '')).catch(() => null);
+    if (!user || !(current.mutedMembers || []).includes(user.id)) return message.reply('استخدم: `reallow @عضو` أو `reallow USER_ID` لعضو ممنوع من الكتابة.');
     current.mutedMembers = current.mutedMembers.filter(id => id !== user.id);
     await save();
     return message.reply('🔊 تم السماح لـ ' + user + ' بالكتابة مجدداً.');
