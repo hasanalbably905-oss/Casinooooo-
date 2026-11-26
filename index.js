@@ -1360,7 +1360,7 @@ async function startBotTicTacToe(message, challenge) {
     if(finished||challenge.status!=='playing') return;
     if(reason==='time'||reason==='idle'){
       finished=true;
-      await settleGoldenBotGame(challenge,'loss','انتهى الوقت قبل إكمال اللعبة.');
+      await settleGoldenBotGame(challenge,'draw','انتهى الوقت قبل إكمال اللعبة؛ لم يتم احتساب ربح أو خسارة.');
     }
   });
 }
@@ -1381,6 +1381,8 @@ async function startBotTowers(message, challenge) {
   collector.on('collect',async i=>{
     if(i.user.id!==challenge.userId)return ephemeral(i,'هذه اللعبة ليست لك.');
     const mode=i.customId.split(':')[1];
+    if(wallet.coins<challenge.stake){challenge.status='cancelled';await save();return i.update({content:'رصيدك لم يعد كافياً لبدء اللعبة.',embeds:[],components:[]});}
+    wallet.coins-=challenge.stake;
     const cfg={hard:{buttons:3,correct:1,mult:1.0,label:'صعب'},medium:{buttons:2,correct:1,mult:0.8,label:'متوسط'},easy:{buttons:3,correct:2,mult:0.4,label:'سهل'}}[mode];
     challenge.tower={mode,level:0,levels:Array.from({length:5},()=>{const a=[];while(a.length<cfg.correct){const n=crypto.randomInt(cfg.buttons);if(!a.includes(n))a.push(n);}return a;})};
     challenge.expiresAt=Date.now()+90000; await save();
@@ -1448,7 +1450,7 @@ async function startBotMiniGame(message, challenge, mode) {
     title='🎯 لعبة الرقم التقريبي';
     description='اختر رقماً من **1 إلى 5**. يحدد الرقم السري النتيجة.';
     rows=[new ActionRowBuilder().addComponents(...[1,2,3,4,5].map(n=>btn('bm:guess'+n+':'+challenge.id,String(n),ButtonStyle.Primary)))];
-  }else if(mode==='find_ball){
+  }else if(mode==='find_ball'){
     title='🥎 البحث عن الكرة';
     description='الكرة مخبأة تحت واحد من الأكواب الثلاثة. لديك 15 ثانية للاختيار.';
     rows=[new ActionRowBuilder().addComponents(...[1,2,3].map(n=>btn('bm:cup'+n+':'+challenge.id,'🥤 الكوب '+n,ButtonStyle.Secondary)))];
