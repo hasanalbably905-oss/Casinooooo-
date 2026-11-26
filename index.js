@@ -1040,6 +1040,9 @@ async function settle(g, winner, result) {
       return;
     }
     account(winner).coins += payout;
+    const loserWallet = account(loser);
+    const cashbackEarned = Math.floor(g.bet * 0.025);
+    loserWallet.cashback = (Number(loserWallet.cashback) || 0) + cashbackEarned;
     if (g.mode === 'dice' || g.mode === 'close') {
       const winnerScore = g.mode === 'close'
         ? Number((g.closeSums && g.closeSums[winner]) || 0)
@@ -1577,6 +1580,15 @@ client.on('messageCreate', async message => {
       await save();
       return message.reply('🔓 تم إظهار رصيدك مجدداً.');
     }
+    if (cmd === 'كاش') {
+      const wallet = account(message.author.id);
+      const amount = Math.max(0, Number(wallet.cashback) || 0);
+      const embed = makeEmbed('💸 رصيد الكاش باك',
+        'رصيدك المتاح: **' + fmt(amount) + '** كوين\\nتحصل على 2.5% من قيمة الرهان عند الخسارة في التحديات.')
+        .setColor(0x2ecc71);
+      const row = new ActionRowBuilder().addComponents(btn('cash:withdraw', 'سحب الكاش باك', ButtonStyle.Success));
+      return message.reply({ embeds: [embed], components: [row] });
+    }
     if (['tax', 'ضريبة', 'ضريبه'].includes(cmd)) {
       const amount = amountOf(args.slice(1).join(''));
       if (!amount) return message.reply('الاستخدام: `tax 1m` أو `ضريبة 500k`');
@@ -1630,6 +1642,24 @@ client.on('interactionCreate', async i => {
       return withLock('withdrawal-modal:' + i.user.id, () => withdrawalModal(i));
     }
     if (!i.isButton()) return;
+    if (i.customId === 'cash:withdraw') {
+      return withLock('cashback:' + i.user.id, async () => {
+        const wallet = account(i.user.id);
+        const base = Math.floor(Number(wallet.cashback) || 0);
+        if (base <= 0) return ephemeral(i, 'ليس لديك رصيد كاش باك للسحب.');
+        const expiry = typeof wallet.primeExpires === 'number' ? wallet.primeExpires : (Date.parse(wallet.primeExpires) || 0);
+        const isPrime = expiry > Date.now();
+        const payout = isPrime ? base * 2 : base;
+        if (!Number.isSafeInteger(payout) || !canAddCoins(wallet, payout)) return ephemeral(i, 'تعذر سحب الكاش باك بسبب تجاوز الحد الآمن للرصيد.');
+        wallet.cashback = 0;
+        wallet.coins += payout;
+        await save();
+        const embed = makeEmbed('✅ تم سحب الكاش باك',
+          'تمت إضافة **' + fmt(payout) + '** كوين إلى محفظتك.' + (isPrime ? '\\n👑 تمت مضاعفة المكافأة بسبب Prime.' : ''))
+          .setColor(0x2ecc71);
+        return i.update({ embeds: [embed], components: [] });
+      });
+    }
     const parts = i.customId.split(':');
     const family = parts[0];
     if (!['t', 'c', 'g', 'w', 'l'].includes(family)) return;
