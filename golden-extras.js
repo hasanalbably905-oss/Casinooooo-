@@ -38,7 +38,7 @@ async function handleGoldenExtras(message, options = {}) {
         { name: 'الكاش باك', value: active ? 'مضاعف ×2' : 'عادي', inline: true },
         { name: 'مكافأة Prime اليومية', value: active ? 'متاحة كل 24 ساعة' : 'غير متاحة', inline: true },
       )
-      .setFooter({ text: 'Golden Casino • Prime' })
+      .setFooter({ text: 'Batoot Casino • Prime' })
       .setTimestamp();
     await message.reply({ embeds: [embed] });
     return true;
@@ -148,7 +148,7 @@ async function handleGoldenExtras(message, options = {}) {
         { name: 'التحديات', value: fmt(data.challenges), inline: true },
         { name: 'الأصدقاء', value: fmt(Array.isArray(data.friends) ? data.friends.length : 0), inline: true },
         { name: 'المحظورون', value: fmt(Array.isArray(data.blocked) ? data.blocked.length : 0), inline: true },
-      ).setFooter({ text: 'Golden • ملف اللاعب' }).setTimestamp();
+      ).setFooter({ text: 'Batoot Casino • ملف اللاعب' }).setTimestamp();
     await message.reply({ embeds: [embed] });
     return true;
   }
