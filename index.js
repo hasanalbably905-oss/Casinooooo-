@@ -9,6 +9,7 @@ const {
   Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
+const { handleGoldenCatalog } = require('./golden-catalog');
 
 const CFG = {
   owner: process.env.OWNER_ID || '1483368871032520704',
@@ -1347,6 +1348,7 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (await handleGoldenCatalog(message, { ownerId: CFG.owner })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
     if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
     if (cmd === 'فك') return unlinkAccounts(message, args);
