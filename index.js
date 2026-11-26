@@ -2619,6 +2619,39 @@ client.on('guildMemberRemove', member => {
   save().catch(error => console.error('Could not save departed member:', error));
 });
 
+async function publishRedeemCode(message, args) {
+  if (!admin(message.author.id)) return message.reply('هذا الأمر مخصص للإدارة فقط.');
+  const code = String(args[1] || '').trim().toUpperCase();
+  const reward = amountOf(args[2]);
+  const maxUses = Number(args[3]);
+  const durationMinutes = Number(args[4] || 0);
+  if (!/^[A-Z0-9_-]{3,40}$/.test(code) || !reward || !Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 100000 || !Number.isSafeInteger(durationMinutes) || durationMinutes < 0 || durationMinutes > 525600) {
+    return message.reply('صيغة الأمر: نشر-كود CODE REWARD MAX_USES MINUTES\nمثال: نشر-كود BATOOT2026 500k 100 60\nاجعل الدقائق 0 إذا أردت كوداً بلا انتهاء زمني.');
+  }
+  db.redeemCodes = db.redeemCodes || {};
+  if (db.redeemCodes[code] && db.redeemCodes[code].active && db.redeemCodes[code].uses < db.redeemCodes[code].maxUses) return message.reply('يوجد كود نشط بهذا الاسم بالفعل.');
+  const now = Date.now();
+  db.redeemCodes[code] = { code, reward, maxUses, uses: 0, createdBy: message.author.id, createdAt: now, expiresAt: durationMinutes > 0 ? now + durationMinutes * 60000 : null, active: true, redeemedBy: [] };
+  await save();
+  const expiryText = durationMinutes > 0 ? 'ينتهي بعد **' + durationMinutes + '** دقيقة.' : 'بدون انتهاء زمني.';
+  return message.reply({ embeds: [new EmbedBuilder().setColor(0x22C55E).setTitle('✅ تم نشر كود استرداد جديد').setDescription('**الكود:** ' + code + '\n**الجائزة:** ' + fmt(reward) + ' كوين\n**عدد الاستخدامات:** ' + maxUses + '\n**الصلاحية:** ' + expiryText).setFooter({ text: 'Batoot Casino • Redeem System' }).setTimestamp()] });
+}
+
+async function redeemCodeSubmit(i) {
+  const code = String(i.fields.getTextInputValue('code') || '').trim().toUpperCase();
+  const entry = db.redeemCodes && db.redeemCodes[code];
+  if (!entry || entry.active !== true) return i.editReply('❌ **هذا الكود غير صحيح أو غير متاح.**');
+  if (entry.expiresAt && Date.now() >= entry.expiresAt) { entry.active = false; await save(); return i.editReply('⌛ **انتهت صلاحية هذا الكود.**'); }
+  if (entry.uses >= entry.maxUses) { entry.active = false; await save(); return i.editReply('🚫 **اكتمل الحد الأقصى لاستخدام هذا الكود.**'); }
+  entry.redeemedBy = Array.isArray(entry.redeemedBy) ? entry.redeemedBy : [];
+  if (entry.redeemedBy.includes(i.user.id)) return i.editReply('⚠️ **لقد استخدمت هذا الكود مسبقاً.**');
+  const wallet = account(i.user.id);
+  if (!canAddCoins(wallet, entry.reward)) return i.editReply('تعذر إضافة الجائزة بسبب تجاوز الحد الآمن للرصيد.');
+  wallet.coins += entry.reward; entry.uses += 1; entry.redeemedBy.push(i.user.id);
+  if (entry.uses >= entry.maxUses) entry.active = false;
+  await save();
+  return i.editReply('🎉 **تم استرداد الكود بنجاح!**\nتمت إضافة **' + fmt(entry.reward) + '** كوين إلى رصيدك.');
+}
 client.on('messageCreate', async message => {
   if (!message.guild || message.author.bot) return;
   if (CFG.guild && message.guild.id !== CFG.guild) return;
@@ -2644,6 +2677,7 @@ client.on('messageCreate', async message => {
       return withLock(lockKey, () => depositToLinkedPartner(message, args));
     }
     if (cmd === 'فصل') return withLock('link-unlink:' + message.author.id, () => unlinkAccounts(message, args));
+    if (['نشر-كود', 'انشاء-كود'].includes(cmd)) return publishRedeemCode(message, args);
     if (['تحويل', 'transfer', 'pay'].includes(cmd)) return createMemberTransfer(message, args);
     if (cmd === 'شحن') {
       const parsed = legacyAdminAmount(args[1]);
@@ -2843,6 +2877,10 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async i => {
   try {
+    if (i.isModalSubmit() && i.customId === 'redeem:modal') {
+      await i.deferReply({ ephemeral: true });
+      return withLock('redeem:' + i.user.id, () => redeemCodeSubmit(i));
+    }
     if (i.isModalSubmit() && i.customId === 'w:modal') {
       await i.deferReply({ ephemeral: true });
       return withLock('withdrawal-modal:' + i.user.id, () => withdrawalModal(i));
@@ -2851,6 +2889,12 @@ client.on('interactionCreate', async i => {
       return withLock('bot-challenge:' + i.customId.split(':')[1], () => botChallengeSelect(i));
     }
     if (!i.isButton()) return;
+    if (i.customId === 'redeem:open') {
+      const modal = new ModalBuilder().setCustomId('redeem:modal').setTitle('Redeem Code');
+      const codeInput = new TextInputBuilder().setCustomId('code').setLabel('أدخل كود الاسترداد').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(40).setPlaceholder('مثال: BATOOT2026');
+      modal.addComponents(new ActionRowBuilder().addComponents(codeInput));
+      return i.showModal(modal);
+    }
     if (i.customId === 'cash:withdraw') {
       return withLock('cashback:' + i.user.id, async () => {
         const wallet = account(i.user.id);
@@ -2996,44 +3040,35 @@ async function ensureRedeemInfoEmbed() {
     .setAuthor({ name: 'BATOOT CASINO • REDEEM CENTER', iconURL: client.user.displayAvatarURL() })
     .setTitle('🎁 أكواد الاسترداد | Redeem Codes')
     .setDescription([
-      'مرحباً بك في مركز استرداد أكواد **Batoot Casino**!',
-      'استخدم الأكواد الصحيحة لتحصل على مكافآتك قبل نفادها.',
+      '**مرحباً بك في مركز استرداد أكواد Batoot Casino!**',
+      '**أدخل الأكواد الصحيحة لتحصل على مكافآتك قبل نفادها.**',
       '',
-      '━━━━━━━━━━━━━━━━━━━━'
+      '**━━━━━━━━━━━━━━━━━━━━**'
     ].join('\n'))
     .addFields(
-      {
-        name: '⚡・السرعة تصنع الفرق',
-        value: 'الأكواد متاحة للجميع، لكن الأسبقية لمن يقوم باستردادها أولاً.'
-      },
-      {
-        name: '⏳・مدة الصلاحية',
-        value: 'قد تكون بعض الأكواد محدودة بوقت معين؛ بادر باستخدامها قبل انتهاء صلاحيتها.'
-      },
-      {
-        name: '🎉・المكافآت',
-        value: 'كل كود يمنح جائزة محددة عند تفعيله بنجاح، حسب إعدادات الكود.'
-      },
-      {
-        name: '🚫・حد الاستخدام',
-        value: 'عند بلوغ الكود الحد الأقصى لعدد مرات الاسترداد، سيتوقف عن قبول طلبات جديدة.'
-      }
+      { name: '**⚡・السرعة تصنع الفرق**', value: '**الأسبقية لمن يسترد الكود أولاً، فكن سريعاً!**' },
+      { name: '**⏳・مدة الصلاحية**', value: '**بعض الأكواد محدودة بوقت معين؛ استخدمها قبل انتهاء صلاحيتها.**' },
+      { name: '**🎉・المكافآت**', value: '**كل كود يمنح جائزة محددة عند نجاح عملية الاسترداد.**' },
+      { name: '**🚫・حد الاستخدام**', value: '**عند اكتمال عدد مرات الاستخدام المسموح به، يتوقف الكود تلقائياً.**' }
     )
     .setFooter({ text: 'BATOOT CASINO • GOOD LUCK & ENJOY' })
     .setTimestamp();
+  const redeemRow = new ActionRowBuilder().addComponents(
+    btn('redeem:open', 'Redeem Code', ButtonStyle.Success)
+  );
 
   db.settings = db.settings || {};
   const previousId = db.settings.redeemInfoMessageId;
   if (previousId) {
     const previous = await channel.messages.fetch(previousId).catch(() => null);
     if (previous) {
-      await previous.edit({ embeds: [embed] });
+      await previous.edit({ embeds: [embed], components: [redeemRow] });
       console.log('Redeem info embed updated in channel:', channelId);
       return;
     }
   }
 
-  const sent = await channel.send({ embeds: [embed] });
+  const sent = await channel.send({ embeds: [embed], components: [redeemRow] });
   db.settings.redeemInfoMessageId = sent.id;
   await save();
   console.log('Redeem info embed sent to channel:', channelId);
