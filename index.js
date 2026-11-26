@@ -1416,7 +1416,7 @@ function privateRoomPanelEmbed() {
   return new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 | Golden Casino • الرومات الخاصة')
     .setDescription(
       '> احجز روم خاصة لك ولأصدقائك داخل السيرفر.\n' +
-      ' > يمكنك إضافة حتى **10 أعضاء** إلى رومك.\n' +
+      '> يمكنك إضافة حتى **10 أعضاء** إلى رومك.\n' +
       '> مدة الحجز: **12 ساعة**.\n' +
       '> سعر الحجز: **' + fmt(price) + ' كوين**.\n' +
       '> الرومات المتاحة حالياً: **' + available + '/10**.\n\n' +
