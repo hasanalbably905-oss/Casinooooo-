@@ -1063,7 +1063,7 @@ async function recoverWithdrawalRequests() {
       if (existing) continue;
     }
     const msg = await channel.send({
-      embeds: [makeEmbed('طلب سحب — استعادة تلقائية', 'العضو: <@' + req.user + '>\nالمبلغ: **' + fmt(req.amount) + '**\nالحالة: قيد المراجعة\nرقم الطلب: `' + req.id + '`')],
+      embeds: [withdrawalRequestEmbed(req, true)],
       components: [new ActionRowBuilder().addComponents(
         btn('w:approve:' + req.id, 'قبول', ButtonStyle.Success),
         btn('w:reject:' + req.id, 'رفض وإرجاع الرصيد', ButtonStyle.Danger),
@@ -1091,7 +1091,7 @@ async function withdrawalModal(i) {
   db.withdrawals[id] = { id, user: i.user.id, amount: n, status: 'pending', created: Date.now(), message: null, messageChannel: CFG.requestsRoom };
   await save();
   const msg = await ch.send({
-    embeds: [makeEmbed('طلب سحب جديد', 'العضو: <@' + i.user.id + '>\nالمبلغ: **' + fmt(n) + '**\nالرصيد بعد الحجز: **' + fmt(wallet.coins) + '**\nالحالة: قيد المراجعة')],
+    embeds: [withdrawalRequestEmbed(db.withdrawals[id])],
     components: [new ActionRowBuilder().addComponents(btn('w:approve:' + id, 'قبول', ButtonStyle.Success), btn('w:reject:' + id, 'رفض وإرجاع الرصيد', ButtonStyle.Danger))],
   }).catch(() => null);
   if (!msg) {
