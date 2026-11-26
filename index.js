@@ -100,26 +100,16 @@ async function loadGitHubData() {
     if (!parsed || typeof parsed !== 'object' || !parsed.users || typeof parsed.users !== 'object') {
       throw new Error('Invalid GitHub data format; refusing to overwrite data.');
     }
-    // Never replace locally imported balances with a newly-created empty GitHub store.
+    // Remote data is authoritative for existing users; retain local-only users and
+    // import every persisted collection so newly added features survive restarts.
     const remoteUsers = parsed.users;
     const localUsers = db.users && typeof db.users === 'object' ? db.users : {};
-    db.users = Object.keys(remoteUsers).length === 0 && Object.keys(localUsers).length > 0
-      ? localUsers
-      : remoteUsers;
-    db.games = parsed.games || {};
-    db.redeemCodes = parsed.redeemCodes || {};
-    db.liveBets = Array.isArray(parsed.liveBets) ? parsed.liveBets : (db.liveBets || []);
-    db.settings = { ...(db.settings || {}), ...(parsed.settings || {}) };
-    db.wheel = parsed.wheel || {};
-    db.withdrawals = parsed.withdrawals || {};
-    db.processedTransfers = parsed.processedTransfers || {};
-    db.creditReviews = parsed.creditReviews || {};
-    db.transfers = parsed.transfers || {};
-    db.linkRequests = parsed.linkRequests || {};
-    db.linkedAccounts = parsed.linkedAccounts || {};
-    db.linkCooldowns = parsed.linkCooldowns || {};
-    db.linkedWithdrawals = parsed.linkedWithdrawals || {};
-    db.adminLogs = parsed.adminLogs || [];
+    db.users = { ...localUsers, ...remoteUsers };
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key === 'users') continue;
+      if (key === 'settings') db.settings = { ...(db.settings || {}), ...(value || {}) };
+      else db[key] = value;
+    }
     githubFileSha = remote.sha;
     await fs.promises.writeFile(FILE, JSON.stringify(db, null, 2), 'utf8');
     console.log('Loaded casino data from GitHub.');
@@ -135,8 +125,33 @@ async function loadGitHubData() {
   }
 }
 
+async function ensureGitHubDataBranch() {
+  const branchRefPath = '/repos/' + GH_REPO + '/git/ref/heads/' + encodeURIComponent(GH_BRANCH);
+  try {
+    await githubRequest('GET', branchRefPath);
+    return true;
+  } catch (error) {
+    if (error.statusCode !== 404) throw error;
+  }
+  const baseBranch = process.env.GITHUB_BASE_BRANCH || 'main';
+  const base = await githubRequest('GET', '/repos/' + GH_REPO + '/git/ref/heads/' + encodeURIComponent(baseBranch));
+  if (!base.object || !base.object.sha) throw new Error('Could not find base branch SHA for data backup.');
+  try {
+    await githubRequest('POST', '/repos/' + GH_REPO + '/git/refs', {
+      ref: 'refs/heads/' + GH_BRANCH,
+      sha: base.object.sha,
+    });
+  } catch (error) {
+    if (error.statusCode !== 422) throw error;
+    await githubRequest('GET', branchRefPath);
+  }
+  console.log('Created GitHub data backup branch:', GH_BRANCH);
+  return true;
+}
+
 async function pushGitHubData(content) {
   if (!GH_TOKEN || githubDataBlocked) return;
+  await ensureGitHubDataBranch();
   const payload = {
     message: 'Update Batoot Casino data',
     content: Buffer.from(content, 'utf8').toString('base64'),
@@ -3458,6 +3473,9 @@ client.once('ready', async () => {
     }
   }
   await save();
+  console.log(GH_TOKEN ? 'Persistent GitHub backup is enabled.' : 'WARNING: GITHUB_TOKEN is missing; data is only saved on this host and may be lost when redeployed.');
+  const autosave = setInterval(() => save().catch(error => console.error('Periodic data save failed:', error)), 60000);
+  if (typeof autosave.unref === 'function') autosave.unref();
   await recoverCreditReviews().catch(console.error);
   await recoverWithdrawalRequests().catch(console.error);
   await ensurePrivateRoomPanel().catch(console.error);
