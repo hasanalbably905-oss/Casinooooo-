@@ -1416,6 +1416,37 @@ async function privateRoomCommand(message, args) {
     await save();
     return message.reply('✅ تمت إزالة ' + user + ' من الروم.');
   }
+  if (['hide', 'اخفاء', 'إخفاء'].includes(cmd)) {
+    await message.channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
+    current.hidden = true;
+    await save();
+    return message.reply('🔒 تم إخفاء الروم عن بقية أعضاء السيرفر. أنت والأعضاء المضافون ما زلتم قادرين على الدخول.');
+  }
+  if (['show', 'اظهار', 'إظهار'].includes(cmd)) {
+    await message.channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
+    current.hidden = false;
+    await save();
+    return message.reply('🔓 تم إظهار الروم لجميع أعضاء السيرفر.');
+  }
+  if (['unallow', 'منع'].includes(cmd)) {
+    const user = message.mentions.users.first();
+    if (!user || user.id === current.owner) return message.reply('استخدم: `unallow @عضو`.');
+    const member = await message.guild.members.fetch(user.id).catch(() => null);
+    if (!member) return message.reply('يجب أن يكون العضو في السيرفر.');
+    await message.channel.permissionOverwrites.edit(user.id, { SendMessages: false });
+    current.mutedMembers = Array.isArray(current.mutedMembers) ? current.mutedMembers : [];
+    if (!current.mutedMembers.includes(user.id)) current.mutedMembers.push(user.id);
+    await save();
+    return message.reply('🔇 تم منع ' + user + ' من الكتابة في الروم.');
+  }
+  if (['reallow', 'سماح'].includes(cmd)) {
+    const user = message.mentions.users.first();
+    if (!user || !(current.mutedMembers || []).includes(user.id)) return message.reply('استخدم: `reallow @عضو` لعضو ممنوع من الكتابة.');
+    await message.channel.permissionOverwrites.edit(user.id, { SendMessages: true });
+    current.mutedMembers = current.mutedMembers.filter(id => id !== user.id);
+    await save();
+    return message.reply('🔊 تم السماح لـ ' + user + ' بالكتابة مجدداً.');
+  }
   return false;
 }
 async function challenge(message, args) {
@@ -2214,7 +2245,7 @@ client.on('messageCreate', async message => {
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
-    if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
+    if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة', 'hide', 'اخفاء', 'إخفاء', 'show', 'اظهار', 'إظهار', 'unallow', 'منع', 'reallow', 'سماح'].includes(cmd)) {
       const handled = await privateRoomCommand(message, args);
       if (handled !== false) return handled;
     }
