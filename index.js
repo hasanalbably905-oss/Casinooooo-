@@ -590,12 +590,25 @@ function legacyPlayerTag(id) {
   const user = client.users.cache.get(String(id));
   return user ? user.tag : String(id);
 }
+function diceRollList(g, id) {
+  const value = g.rolls && g.rolls[id];
+  if (Array.isArray(value)) return value;
+  return value === undefined || value === null ? [] : [Number(value)];
+}
+function diceTotal(g, id) {
+  return diceRollList(g, id).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+function dicePlayerText(g, id) {
+  const rolls = diceRollList(g, id);
+  if (!rolls.length) return '> بانتظار اللعب';
+  return '> ' + rolls.join(' + ') + (rolls.length === 3 ? ' = **' + diceTotal(g, id) + '**' : '  •  (' + rolls.length + '/3)');
+}
 function legacyGameEmbed(g) {
   return new EmbedBuilder()
-    .setTitle('بيانات التحدي')
+    .setTitle('بيانات التحدي — 3 رميات لكل لاعب')
     .addFields(
-      { name: legacyPlayerTag(g.p1), value: '> ' + String(g.rolls && g.rolls[g.p1] !== undefined ? g.rolls[g.p1] : 0) },
-      { name: legacyPlayerTag(g.p2), value: '> ' + String(g.rolls && g.rolls[g.p2] !== undefined ? g.rolls[g.p2] : 0) },
+      { name: legacyPlayerTag(g.p1), value: dicePlayerText(g, g.p1) },
+      { name: legacyPlayerTag(g.p2), value: dicePlayerText(g, g.p2) },
     );
 }
 function legacyCloseEmbed(g) {
@@ -651,10 +664,10 @@ async function settle(g, winner, result) {
     const payout = g.bet * 2 - fee;
     const winnerScore = g.mode === 'close'
       ? Number((g.closeSums && g.closeSums[winner]) || 0)
-      : Number((g.rolls && g.rolls[winner]) || 0);
+      : diceTotal(g, winner);
     const loserScore = g.mode === 'close'
       ? Number((g.closeSums && g.closeSums[loser]) || 0)
-      : Number((g.rolls && g.rolls[loser]) || 0);
+      : diceTotal(g, loser);
     account(winner).coins += payout;
     if (g.mode === 'dice') {
       g.result = '**<@' + winner + '>** فائززززز !!! ب مجموع **' + winnerScore + '** الي يفوز فيه نقطة!\n\n' +
@@ -796,7 +809,7 @@ async function gameButton(i, parts) {
     g.escrow = true;
     g.status = 'playing';
     g.expires = Date.now() + CFG.gameMs;
-    g.rolls = {};
+    g.rolls = { [g.p1]: [], [g.p2]: [] };
     if (g.mode === 'close') initializeApproximateGame(g);
     else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
     await save();
@@ -850,29 +863,30 @@ async function gameButton(i, parts) {
     return;
   }
   if (action === 'roll') {
-    if (g.status !== 'playing') return ephemeral(i, 'اللعبة ليست في مرحلة اللعب.');
-    if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'أنت لست أحد لاعبي هذا التحدي.');
-    if (g.rolls[uid] !== undefined) return ephemeral(i, 'لقد لعبت دورك بالفعل.');
+    if (g.status !== 'playing' || g.mode !== 'dice') return ephemeral(i, 'لعبة النرد غير نشطة.');
+    if (uid !== g.p1 && uid !== g.p2) return ephemeral(i, 'أنت لست أحد لاعبي التحدي.');
+    if (!g.rolls || typeof g.rolls !== 'object') g.rolls = { [g.p1]: [], [g.p2]: [] };
+    if (!Array.isArray(g.rolls[g.p1])) g.rolls[g.p1] = g.rolls[g.p1] === undefined ? [] : [Number(g.rolls[g.p1])];
+    if (!Array.isArray(g.rolls[g.p2])) g.rolls[g.p2] = g.rolls[g.p2] === undefined ? [] : [Number(g.rolls[g.p2])];
+    if (g.rolls[uid].length >= 3) return ephemeral(i, 'أكملت رمياتك الثلاث بالفعل.');
     if (g.turn && g.turn !== uid) return ephemeral(i, 'ليس دورك الآن.');
-    g.rolls[uid] = crypto.randomInt(1, 7);
-    await save();
-    if (g.rolls[g.p1] === undefined || g.rolls[g.p2] === undefined) {
-      const nextPlayer = uid === g.p1 ? g.p2 : g.p1;
+    g.rolls[uid].push(crypto.randomInt(1, 7));
+    const bothFinished = g.rolls[g.p1].length === 3 && g.rolls[g.p2].length === 3;
+    if (!bothFinished) {
+      const other = uid === g.p1 ? g.p2 : g.p1;
+      const nextPlayer = g.rolls[other].length < 3 ? other : uid;
       g.turn = nextPlayer;
       g.expires = Date.now() + CFG.gameMs;
       await save();
-      return i.update({ content: '<@' + nextPlayer + '>\n اصبح دورك', embeds: [legacyGameEmbed(g)], components: gameRows(g) });
+      await i.deferUpdate();
+      await editGame(g, 'لعبة النرد — 3 رميات', '<@' + nextPlayer + '>\\n اصبح دورك', gameRows(g));
+      return;
     }
-    const a = g.rolls[g.p1], b = g.rolls[g.p2];
-    let winner = null;
-    if (g.mode === 'dice') winner = a === b ? null : (a > b ? g.p1 : g.p2);
-    else {
-      const da = Math.abs(a - g.target), dbb = Math.abs(b - g.target);
-      winner = da === dbb ? null : (da < dbb ? g.p1 : g.p2);
-    }
-    const result = g.mode === 'dice'
-      ? '<@' + g.p1 + '> حصل على **' + a + '**\n<@' + g.p2 + '> حصل على **' + b + '**'
-      : 'الرقم السري: **' + g.target + '**\n<@' + g.p1 + '> اختار **' + a + '**\n<@' + g.p2 + '> اختار **' + b + '**';
+    const a = diceTotal(g, g.p1), b = diceTotal(g, g.p2);
+    const winner = a === b ? null : (a > b ? g.p1 : g.p2);
+    const result =
+      '<@' + g.p1 + '> رمياته: **' + diceRollList(g, g.p1).join(' + ') + ' = ' + a + '**\\n' +
+      '<@' + g.p2 + '> رمياته: **' + diceRollList(g, g.p2).join(' + ') + ' = ' + b + '**';
     await i.deferUpdate();
     await settle(g, winner, result);
   }
