@@ -94,6 +94,8 @@ async function loadGitHubData() {
     db.games = parsed.games || {};
     db.withdrawals = parsed.withdrawals || {};
     db.processedTransfers = parsed.processedTransfers || {};
+    db.transfers = parsed.transfers || {};
+    db.adminLogs = parsed.adminLogs || [];
     githubFileSha = remote.sha;
     await fs.promises.writeFile(FILE, JSON.stringify(db, null, 2), 'utf8');
     console.log('Loaded casino data from GitHub.');
@@ -155,8 +157,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, transfers: old.transfers || {} }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, transfers: {} };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, transfers: old.transfers || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, transfers: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 function save() {
@@ -421,6 +423,82 @@ async function transferButton(i, parts) {
     .setTimestamp();
   return i.update({ embeds: [embed], components: [] });
 }
+async function claimDaily(message) {
+  const data = account(message.author.id);
+  const now = Date.now();
+  const remaining = 24 * 60 * 60 * 1000 - (now - Number(data.dailyAt || 0));
+  if (remaining > 0) {
+    const hours = Math.floor(remaining / 3600000);
+    const minutes = Math.ceil((remaining % 3600000) / 60000);
+    return message.reply('⏳ استلمت مكافأتك اليومية بالفعل. ارجع بعد **' + hours + ' ساعة و' + minutes + ' دقيقة**.');
+  }
+  const reward = crypto.randomInt(1500, 5001);
+  data.coins += reward;
+  data.dailyAt = now;
+  data.dailyClaims = (data.dailyClaims || 0) + 1;
+  await save();
+  return message.reply({ embeds: [makeEmbed('🎁 المكافأة اليومية',
+    'مبروك! حصلت على **' + fmt(reward) + ' كوين**.\n\nرصيدك الجديد: **' + fmt(data.coins) + '**\nيمكنك استلام المكافأة التالية بعد 24 ساعة.'
+  ).setColor(0x2ecc71)] });
+}
+async function workForCoins(message) {
+  const data = account(message.author.id);
+  const now = Date.now();
+  const remaining = 60 * 60 * 1000 - (now - Number(data.workAt || 0));
+  if (remaining > 0) return message.reply('🕒 يمكنك العمل مجدداً بعد **' + Math.ceil(remaining / 60000) + ' دقيقة**.');
+  const jobs = ['ساعدت في تنظيم الكازينو', 'أنهيت مهمة يومية', 'فزت بمسابقة صغيرة', 'قدمت خدمة لأحد الأعضاء', 'أنجزت عملاً إضافياً'];
+  const reward = crypto.randomInt(500, 2501);
+  data.coins += reward;
+  data.workAt = now;
+  data.workCount = (data.workCount || 0) + 1;
+  await save();
+  return message.reply({ embeds: [makeEmbed('💼 نتيجة العمل',
+    '📌 ' + jobs[crypto.randomInt(jobs.length)] + '\n\n💰 أجرك: **' + fmt(reward) + ' كوين**\n💳 رصيدك الحالي: **' + fmt(data.coins) + '**\n\nيمكنك العمل مرة أخرى بعد ساعة.'
+  ).setColor(0x3498db)] });
+}
+async function showProfile(message, user) {
+  const data = account(user.id);
+  const sent = Object.values(db.transfers).filter(t => t && t.status === 'completed' && t.from === user.id).length;
+  const received = Object.values(db.transfers).filter(t => t && t.status === 'completed' && t.to === user.id).length;
+  const member = await message.guild.members.fetch(user.id).catch(() => null);
+  const joined = member && member.joinedTimestamp ? '<t:' + Math.floor(member.joinedTimestamp / 1000) + ':D>' : 'غير متوفر';
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setAuthor({ name: 'الملف الشخصي • ' + user.username, iconURL: user.displayAvatarURL({ dynamic: true }) })
+    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+    .addFields(
+      { name: '💰 الرصيد', value: fmt(data.coins) + ' كوين', inline: true },
+      { name: '🎁 مرات اليومي', value: String(data.dailyClaims || 0), inline: true },
+      { name: '💼 مرات العمل', value: String(data.workCount || 0), inline: true },
+      { name: '📤 تحويلات مرسلة', value: String(sent), inline: true },
+      { name: '📥 تحويلات مستلمة', value: String(received), inline: true },
+      { name: '📅 تاريخ الانضمام', value: joined, inline: true },
+    )
+    .setFooter({ text: 'Batoot Casino • الملف الشخصي' }).setTimestamp();
+  return message.reply({ embeds: [embed] });
+}
+async function showTransferHistory(message, user) {
+  const rows = Object.values(db.transfers)
+    .filter(t => t && t.status === 'completed' && (t.from === user.id || t.to === user.id))
+    .sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0)).slice(0, 10);
+  if (!rows.length) return message.reply('📭 لا توجد تحويلات مكتملة مسجلة لك.');
+  const lines = rows.map((t, index) => {
+    const outgoing = t.from === user.id;
+    return '**' + (index + 1) + '.** ' + (outgoing ? '📤 إلى' : '📥 من') + ' <@' + (outgoing ? t.to : t.from) + '> — **' + fmt(t.amount) + '** كوين\n<t:' + Math.floor((t.finishedAt || t.createdAt) / 1000) + ':R>';
+  });
+  return message.reply({ embeds: [makeEmbed('📜 آخر التحويلات', lines.join('\n\n')).setColor(0x5865f2)] });
+}
+function logAdminAction(entry) {
+  db.adminLogs.unshift({ ...entry, at: Date.now() });
+  if (db.adminLogs.length > 500) db.adminLogs.length = 500;
+}
+async function showAdminLog(message) {
+  if (!admin(message.author.id)) return message.reply('❎ هذا الأمر للإدارة فقط.');
+  const rows = db.adminLogs.slice(0, 10);
+  if (!rows.length) return message.reply('لا توجد عمليات إدارية مسجلة حالياً.');
+  const lines = rows.map((x, i) => '**' + (i + 1) + '.** <@' + x.admin + '> ' + x.action + ' **' + fmt(x.amount) + '** إلى <@' + x.target + '>\n<t:' + Math.floor(x.at / 1000) + ':R>');
+  return message.reply({ embeds: [makeEmbed('🛡️ سجل عمليات الإدارة', lines.join('\n\n')).setColor(0xe67e22)] });
+}
 async function balance(message, user) {
   const member = message.guild.members.cache.get(user.id);
   const data = member ? recordMember(member) : account(user.id);
@@ -453,7 +531,7 @@ function legacyAdminAmount(input) {
   return { value };
 }
 async function adminBalance(message, args, add) {
-  if (message.author.id !== CFG.owner) return message.reply('هذا الأمر للأونر فقط.');
+  if (!admin(message.author.id)) return message.reply('هذا الأمر للأونر والإدارة المعتمدة فقط.');
   if (!args[1]) return message.reply('> لم تقم بتحديد العضو !');
   const user = await targetUser(message, args[1]);
   if (!user) return message.reply('❎ **لم استطع العثور على هذا الشخص**');
@@ -466,6 +544,7 @@ async function adminBalance(message, args, add) {
   if (!add && a.coins === 0) return message.reply('❎ **هذا الشخص ليس لديه أي رصيد للحذف**');
   if (!add && a.coins < n) return message.reply('❎ **هذا الشخص ليس معه هذا المبلغ لحذفه**');
   a.coins += add ? n : -n;
+  logAdminAction({ admin: message.author.id, target: user.id, amount: n, action: add ? 'أضاف رصيداً' : 'خصم رصيداً', balanceAfter: a.coins });
   await save();
   const embed = new EmbedBuilder()
     .setColor(0x57f287)
@@ -942,6 +1021,11 @@ client.on('messageCreate', async message => {
     }
     if (cmd === 'withdraw' && message.channel.id === CFG.withdrawRoom) return message.channel.send(withdrawPanel());
     if (['فلوس', 'money', 'رصيدي', 'balance'].includes(cmd)) return balance(message, message.mentions.users.first() || message.author);
+    if (['يومي', 'daily'].includes(cmd)) return claimDaily(message);
+    if (['عمل', 'work'].includes(cmd)) return workForCoins(message);
+    if (['ملفي', 'profile', 'بروفايل'].includes(cmd)) return showProfile(message, message.mentions.users.first() || message.author);
+    if (['تحويلاتي', 'history'].includes(cmd)) return showTransferHistory(message, message.author);
+    if (['سجل-اداري', 'adminlog'].includes(cmd)) return showAdminLog(message);
     if (['توب', 'top'].includes(cmd)) {
       await message.guild.members.fetch().catch(() => {});
       const ranked = Object.entries(db.users)
@@ -965,7 +1049,7 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس — عرض الرصيد\nتحويل @عضو مبلغ — طلب تحويل رصيد إلى عضو بعد تأكيدك، مثال: تحويل @عضو 250k\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر فقط)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر فقط)')] });
+        'فلوس — عرض الرصيد\nيومي — استلام مكافأة كل 24 ساعة\nعمل — العمل مقابل كوينز كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — طلب تحويل رصيد إلى عضو بعد تأكيدك، مثال: تحويل @عضو 250k\nتحويلاتي — آخر 10 تحويلات لك\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر فقط)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر والإدارة المعتمدة)\nسجل-اداري — آخر 10 عمليات إضافة وخصم (للإدارة)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
