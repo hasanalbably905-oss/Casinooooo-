@@ -2849,6 +2849,7 @@ client.on('interactionCreate', async i => {
     const parts = i.customId.split(':');
     const family = parts[0];
     if (i.customId === 'r:buy') return withLock('private-room-buy:global', () => buyPrivateRoom(i));
+    if (i.customId.startsWith('bmt:')) return withLock('bot-mini:' + i.customId.split(':')[2], () => botMiniGameButton(i));
     if (i.customId.startsWith('bm:')) return withLock('bot-mini:' + i.customId.split(':')[2], () => botMiniGameButton(i));
     if (i.customId.startsWith('bj:')) return withLock('blackjack:' + i.customId.split(':')[2], () => blackjackButton(i));
     if (i.customId.startsWith('wh:')) return withLock('wheel:' + i.customId.split(':')[2], () => wheelButton(i));
