@@ -2180,7 +2180,8 @@ function legacyCloseEmbed(g) {
     const done = g.closeDone && g.closeDone[id];
     const status = done ? 'Done' : g.closeTurn === id ? '**Playing...**' : 'Waiting...';
     const remaining = g.approxMode === 'descending' ? Number((g.closeRemaining || {})[id] || 0) : Math.max(0, Number(g.closeMax || 0) - Number(total || 0));
-    const expression = nums.length ? nums.join(' + ') + ' = **' + (g.approxMode === 'descending' ? Number(g.closeMax || 0) - remaining : total) + '**\\n0 (متبقي **' + remaining + '** )' : status + '\\n0 (متبقي **' + remaining + '** )';
+    const visible = g.closeVisibility === 'show' || done || id === g.closeTurn;
+    const expression = nums.length && visible ? nums.join(' + ') + ' = **' + (g.approxMode === 'descending' ? Number(g.closeMax || 0) - remaining : total) + '**\\n0 (متبقي **' + remaining + '** )' : status + '\\n0 (متبقي **' + remaining + '** )';
     return { name: legacyPlayerTag(id), value: '> ' + expression };
   });
   return new EmbedBuilder()
@@ -2319,14 +2320,12 @@ async function settle(g, winner, result) {
     const loserWallet = account(loser);
     const cashbackEarned = Math.floor(g.bet * 0.025);
     loserWallet.cashback = (Number(loserWallet.cashback) || 0) + cashbackEarned;
-    if (g.mode === 'dice' || g.mode === 'close') {
-      const winnerScore = g.mode === 'close'
-        ? Number((g.closeSums && g.closeSums[winner]) || 0)
-        : diceTotal(g, winner);
-      const loserScore = g.mode === 'close'
-        ? Number((g.closeSums && g.closeSums[loser]) || 0)
-        : diceTotal(g, loser);
-      g.result = '<@' + winner + '> فائز بمجموع ' + winnerScore + ' نقطة.\n<@' + loser + '> خسر بمجموع ' + loserScore + ' نقطة.\nاللعبة: ' + (g.mode === 'dice' ? 'النرد' : 'الرقم التقريبي') + ' • الرهان: ' + fmt(g.bet);
+    if (g.mode === 'close') {
+      g.result = result;
+    } else if (g.mode === 'dice') {
+      const winnerScore = diceTotal(g, winner);
+      const loserScore = diceTotal(g, loser);
+      g.result = '<@' + winner + '> فائز بمجموع ' + winnerScore + ' نقطة.\n<@' + loser + '> خسر بمجموع ' + loserScore + ' نقطة.\nاللعبة: النرد • الرهان: ' + fmt(g.bet);
     } else {
       g.result = result + '\n\nالفائز: <@' + winner + '> • الجائزة بعد الرسوم: ' + fmt(payout) + ' كوين.';
     }
@@ -2340,7 +2339,7 @@ async function settle(g, winner, result) {
   await editGame(g, 'انتهت اللعبة', g.result, []);
 }
 async function refund(g, reason) {
-  if (!g || !g.escrow || !['selecting', 'playing'].includes(g.status)) return;
+  if (!g || !g.escrow || !['selecting', 'selecting_subtype', 'playing'].includes(g.status)) return;
   g.status = 'cancelled';
   const returned = Math.floor(g.bet / 2);
   account(g.p1).coins += returned;
@@ -2577,7 +2576,7 @@ async function gameButton(i, parts) {
     g.expires = Date.now() + 90000;
     await i.deferUpdate();
     const total = g.closeSums[uid];
-    if ((g.approxMode === 'descending' && g.closeRemaining[uid] === 0) || total >= g.closeMax) {
+    if ((g.approxMode === 'descending' && g.closeRemaining[uid] === 0) || (g.approxMode !== 'far' && total >= g.closeMax)) {
       await i.followUp({
         content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '** (المتبقي: **' + (g.closeMax - total) + '** )\n' +
           (total === g.closeMax ? 'ممتاز! وصلت إلى الرقم المستهدف تماماً وتم إنهاء دورك.' : 'تجاوزت الرقم المستهدف، وسيتم احتسابك حسب الأقرب إليه سواء أعلى أو أقل.'),
