@@ -1,0 +1,19 @@
+name: Golden migration checks
+on:
+  push:
+    branches: [migration/json-games]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --check index.js
+      - run: node --check golden-catalog.js
+      - run: node --check golden-json-db.js
+      - run: node --test test/golden-json-db.test.js
