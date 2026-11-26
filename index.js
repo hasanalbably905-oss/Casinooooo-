@@ -2501,10 +2501,11 @@ async function gameButton(i, parts) {
     if(uid!==g.p1&&uid!==g.p2) return ephemeral(i,'أنت لست أحد اللاعبين.');
     if(action==='match'){
       if(uid!==g.matchTurn)return ephemeral(i,'ليس دورك الآن.');
-      const n=Number(parts[2]);if(!Number.isInteger(n)||n<0||n>15||g.matchFound.includes(n)||g.matchOpen.includes(n))return ephemeral(i,'البطاقة غير متاحة.');
+      if(g.matchResetAt&&Date.now()>=g.matchResetAt){g.matchOpen=[];g.matchResetAt=null;}
+      const n=Number(parts[2]);if(!Number.isInteger(n)||n<0||n>15||g.matchFound.includes(n)||g.matchOpen.includes(n)||g.matchOpen.length>=2)return ephemeral(i,'البطاقة غير متاحة.');
       g.matchOpen.push(n);await i.deferUpdate();
-      if(g.matchOpen.length===2){const [a,b]=g.matchOpen;if(g.matchCards[a]===g.matchCards[b]){g.matchFound.push(a,b);g.matchScores[uid]++;g.matchOpen=[];if(g.matchFound.length===16)return settle(g,g.matchScores[g.p1]===g.matchScores[g.p2]?null:(g.matchScores[g.p1]>g.matchScores[g.p2]?g.p1:g.p2),'نتيجة الذاكرة: '+g.matchScores[g.p1]+' — '+g.matchScores[g.p2]);}else{g.matchTurn=uid===g.p1?g.p2:g.p1;g.matchOpen=[];}}
-      await save();await updateSpecialGame(g);return;
+      if(g.matchOpen.length===2){const [a,b]=g.matchOpen;if(g.matchCards[a]===g.matchCards[b]){g.matchFound.push(a,b);g.matchScores[uid]++;g.matchOpen=[];if(g.matchFound.length===16)return settle(g,g.matchScores[g.p1]===g.matchScores[g.p2]?null:(g.matchScores[g.p1]>g.matchScores[g.p2]?g.p1:g.p2),'نتيجة الذاكرة: '+g.matchScores[g.p1]+' — '+g.matchScores[g.p2]);}else{g.matchTurn=uid===g.p1?g.p2:g.p1;g.matchResetAt=Date.now()+1300;}}
+      await save();await updateSpecialGame(g);if(g.matchResetAt){setTimeout(async()=>{if(g.status==='playing'&&g.matchResetAt&&Date.now()>=g.matchResetAt){g.matchOpen=[];g.matchResetAt=null;await save();await updateSpecialGame(g);}},1400);}return;
     }
     if(action==='sort'){
       if(g.mode!=='sortnum')return ephemeral(i,'اللعبة غير نشطة.');
