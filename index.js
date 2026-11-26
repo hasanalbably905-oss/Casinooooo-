@@ -2468,7 +2468,6 @@ client.on('messageCreate', async message => {
     }
     if (cmd === '!rstroom') {
       if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
-      if (args[1] !== 'تأكيد') return message.reply('⚠️ هذا الأمر سيحذف كل الرومات الخاصة النشطة. للتأكيد اكتب: `!rstroom تأكيد`');
       const rooms = activePrivateRooms();
       for (const room of rooms) await expirePrivateRoom(room);
       await refreshPrivateRoomPanel();
