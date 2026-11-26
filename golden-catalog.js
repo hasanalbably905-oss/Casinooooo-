@@ -120,10 +120,10 @@ async function handleGoldenCatalog(message, options = {}) {
   if (command === 'العاب') {
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('🎮 ألعاب Golden')
-      .setDescription('قائمة الألعاب الموجودة في مشروع Golden الأصلي.')
+      .setTitle('🎮 ألعاب Batoot')
+      .setDescription('قائمة الألعاب الموجودة في مشروع Batoot Casino.')
       .addFields(GAMES.map(([name, description]) => ({ name, value: description, inline: true })))
-      .setFooter({ text: 'Golden Casino • قائمة الألعاب' })
+      .setFooter({ text: 'Batoot Casino • قائمة الألعاب' })
       .setTimestamp();
     await message.reply({ embeds: [embed] });
     return true;
@@ -131,7 +131,7 @@ async function handleGoldenCatalog(message, options = {}) {
   if (['اوامر', 'مساعدة', 'help'].includes(command)) {
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('🎮 أوامر Golden Casino')
+      .setTitle('🎮 أوامر Batoot Casino')
       .setDescription('الأوامر المنقولة من لوحة المساعدة في مشروع Golden.')
       .addFields(COMMAND_GROUPS.map(group => ({ ...group, inline: true })))
       .setFooter({ text: 'اكتب العاب لعرض الألعاب' })
@@ -147,7 +147,7 @@ async function handleGoldenCatalog(message, options = {}) {
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
       .setTitle('⚙️ أوامر الأونرز — AHELP')
-      .setDescription('أوامر الإدارة الخاصة المنقولة من Golden.')
+      .setDescription('أوامر الإدارة الخاصة المنقولة من Batoot Casino.')
       .addFields(OWNER_GROUPS.map(group => ({ ...group, inline: false })))
       .setFooter({ text: 'استخدم أوامر الإدارة بمسؤولية' })
       .setTimestamp();
