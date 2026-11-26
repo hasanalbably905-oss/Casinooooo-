@@ -10,6 +10,7 @@ const {
   ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const { handleGoldenCatalog } = require('./golden-catalog');
+const { handleGoldenSocial } = require('./golden-social');
 
 const CFG = {
   owner: process.env.OWNER_ID || '1483368871032520704',
@@ -198,10 +199,12 @@ function save() {
 }
 function account(id) {
   const key = String(id);
-  if (!db.users[key]) db.users[key] = { id: key, coins: 0 };
+  if (!db.users[key]) db.users[key] = { id: key, coins: 0, friends: [], blocked: [] };
   const n = Number(db.users[key].coins);
   db.users[key].coins = Number.isSafeInteger(n) && n >= 0 ? n : 0;
   db.users[key].id = key;
+  if (!Array.isArray(db.users[key].friends)) db.users[key].friends = [];
+  if (!Array.isArray(db.users[key].blocked)) db.users[key].blocked = [];
   return db.users[key];
 }
 function canAddCoins(data, amount) {
@@ -1348,6 +1351,7 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305' })) return;
     if (await handleGoldenCatalog(message, { ownerId: CFG.owner })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
     if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
