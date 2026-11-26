@@ -2154,9 +2154,9 @@ function gameRows(g) {
     ),
     new ActionRowBuilder().addComponents(
       btn('g:rps:' + g.id, 'حجرة ورقة مقص', ButtonStyle.Secondary).setEmoji('✂️'),
-      btn('g:match:' + g.id, 'الذاكرة', ButtonStyle.Secondary),
-      btn('g:sortnum:' + g.id, 'ترتيب الأرقام', ButtonStyle.Secondary),
-      btn('g:bombchips:' + g.id, 'Bomb Chips', ButtonStyle.Secondary),
+      btn('g:selectmatch:' + g.id, 'لعبة التطابق', ButtonStyle.Secondary).setEmoji('🃏'),
+      btn('g:selectbombchips:' + g.id, 'Bomb Chips', ButtonStyle.Secondary).setEmoji('💣'),
+      btn('g:selectsortnum:' + g.id, 'ترتيب الأرقام', ButtonStyle.Secondary).setEmoji('🔢'),
       btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger).setEmoji('🚫'),
     ),
   ];
@@ -2341,7 +2341,7 @@ async function gameButton(i, parts) {
   const g = db.games[id];
   if (!g) return ephemeral(i, 'هذا التحدي غير موجود أو انتهى.');
   const uid = i.user.id;
-  if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps', 'match', 'sortnum', 'bombchips'].includes(action)) {
+  if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps', 'selectmatch', 'selectsortnum', 'selectbombchips'].includes(action)) {
     if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
     if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
     if (action === 'cancel') {
@@ -2353,7 +2353,7 @@ async function gameButton(i, parts) {
         components: [],
       });
     }
-    g.mode = action === 'selectxo' ? 'xo' : action;
+    g.mode = action === 'selectxo' ? 'xo' : action === 'selectmatch' ? 'match' : action === 'selectsortnum' ? 'sortnum' : action === 'selectbombchips' ? 'bombchips' : action;
     g.status = 'awaiting_accept';
     g.expires = Date.now() + CFG.inviteMs;
     const descriptions = {
