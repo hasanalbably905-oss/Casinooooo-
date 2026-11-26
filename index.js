@@ -2895,8 +2895,94 @@ client.on('interactionCreate', async i => {
   }
 });
 
+async function ensureRulesEmbed() {
+  const channelId = '1575333584967831643';
+  const channel = await client.channels.fetch(channelId).catch(error => {
+    console.error('Could not fetch rules channel:', error);
+    return null;
+  });
+  if (!channel || !channel.isTextBased() || typeof channel.send !== 'function') {
+    console.error('Rules channel is unavailable or is not a text channel:', channelId);
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0xD4AF37)
+    .setAuthor({ name: 'BATOOT CASINO • OFFICIAL RULEBOOK', iconURL: client.user.displayAvatarURL() })
+    .setTitle('📜 قوانين وأنظمة Batoot Casino')
+    .setDescription([
+      'أهلاً بك في **Batoot Casino** 🎲',
+      'يرجى قراءة القوانين التالية والالتزام بها للحفاظ على بيئة منظمة وعادلة للجميع.',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━'
+    ].join('\n'))
+    .addFields(
+      {
+        name: '📌・القواعد العامة',
+        value: [
+          '• التواصل مع الإدارة يكون عبر التذاكر فقط، ويُمنع التواصل الإداري بالخاص.',
+          '• الاحترام المتبادل واجب بين جميع الأعضاء.',
+          '• يجب الالتزام بتوجيهات الطاقم الإداري.',
+          '• تطبق هذه القوانين على الجميع دون استثناء.',
+          '• للاستفسارات والشكاوى والمشاكل، يرجى فتح تذكرة.'
+        ].join('\n')
+      },
+      {
+        name: '🚫・المخالفات الممنوعة',
+        value: [
+          '• يمنع الإعلان أو الترويج لسيرفرات أو جهات خارجية.',
+          '• يمنع نشر المحتوى المسيء أو غير اللائق.',
+          '• يمنع طلب الرتب أو الصلاحيات الإدارية دون إذن.',
+          '• يمنع تكرار المنشن أو الإزعاج والسبام بجميع أشكاله.',
+          '• يمنع الاعتراض على القرارات الإدارية في الشات العام.',
+          '• يمنع تداول عملة البوت خارج القنوات والطرق المعتمدة.',
+          '• يمنع طلب الأموال أو الكريدت من اللاعبين.',
+          '• جميع عمليات الشحن تتم عبر التكت حصراً.',
+          '• يمنع الإقراض أو الاستدانة بين الأعضاء؛ والإدارة لا تتحمل مسؤولية ذلك.',
+          '• يمنع التلاعب بأرصدة اللاعبين أو العبث بها.'
+        ].join('\n')
+      },
+      {
+        name: '⚠️・الثغرات والتلاعب',
+        value: 'أي عضو يثبت استغلاله لثغرة أو تلاعبه بأنظمة البوت قد يتعرض لتصفير رصيده، والإضافة إلى القائمة السوداء، والتحقيق الإداري.'
+      },
+      {
+        name: '📎・تنبيهات مهمة',
+        value: [
+          '• اللعب بالكريدت المشترى واستخدامه مسؤولية اللاعب الشخصية.',
+          '• لا تتحمل إدارة Batoot Casino مسؤولية الخسائر أو نتائج اللعب.',
+          '• مخالفة أي بند تعرض العضو للعقوبة التي تراها الإدارة مناسبة.',
+          '• يحق للإدارة تحديث القوانين أو إضافة بنود جديدة عند الحاجة.'
+        ].join('\n')
+      }
+    )
+    .addFields({
+      name: '🤝・إقرار العضو',
+      value: 'بدخولك ومشاركتك في السيرفر، فأنت توافق على الالتزام بجميع الأنظمة والتعليمات المذكورة أعلاه.'
+    })
+    .setFooter({ text: 'BATOOT CASINO • PLAY FAIR • RESPECT EVERYONE' })
+    .setTimestamp();
+
+  const previousId = db.settings && db.settings.rulesMessageId;
+  if (previousId) {
+    const previous = await channel.messages.fetch(previousId).catch(() => null);
+    if (previous) {
+      await previous.edit({ embeds: [embed] });
+      console.log('Rules embed updated in channel:', channelId);
+      return;
+    }
+  }
+
+  const sent = await channel.send({ embeds: [embed] });
+  db.settings = db.settings || {};
+  db.settings.rulesMessageId = sent.id;
+  await save();
+  console.log('Rules embed sent to channel:', channelId);
+}
+
 client.once('ready', async () => {
   console.log('Batoot Casino ready: ' + client.user.tag);
+  await ensureRulesEmbed().catch(error => console.error('Rules embed setup failed:', error));
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
   if (guild) {
     const members = await guild.members.fetch().catch(error => {
