@@ -2344,7 +2344,8 @@ async function refund(g, reason) {
   const returned = Math.floor(g.bet / 2);
   account(g.p1).coins += returned;
   account(g.p2).coins += returned;
-  g.result = reason + '\nتم خصم نصف المبلغ من الطرفين بسبب عدم إكمال التحدي.';
+  const idleExpiry = String(reason || '').includes('انتهى الوقت');
+  g.result = (idleExpiry ? 'تم إلغاء التحدي بسبب الخمول\\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||' : reason) + '\\nتم خصم نصف المبلغ من الطرفين بسبب عدم إكمال التحدي.';
   await save();
   await recordLiveBetResult('pvp:' + g.id, { userId: g.p1, opponentId: g.p2, amount: g.bet, game: 'تحدي الأعضاء', status: 'refund', payout: returned * 2, detail: g.result });
   await editGame(g, 'تم إلغاء التحدي', g.result, []);
