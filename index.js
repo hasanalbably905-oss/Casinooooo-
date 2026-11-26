@@ -1456,16 +1456,27 @@ async function challenge(message, args) {
     expires: Date.now() + CFG.inviteMs, created: Date.now(),
   };
   const embed = new EmbedBuilder()
-    .setColor(0x808080)
-    .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
-    .setTitle('اختار نوع اللعبة')
-    .setDescription('> العضو: ' + user.toString() + '\n\nالمبلغ: `' + fmt(bet) + '`')
+    .setColor(0x5865f2)
+    .setAuthor({
+      name: message.author.tag,
+      iconURL: message.author.displayAvatarURL({ dynamic: true }),
+    })
+    .setTitle('🎮 اختر نوع اللعبة التي تود اللعب بها!')
+    .setDescription(
+      '> 🧑‍💻 **العضو الذي قمت بتحديده:** ' + user.toString() +
+      '\n> 💰 **المبلغ الذي قمت بتحديده:** `' + fmt(bet) + '`' +
+      '\n\n🕹️ اختر اللعبة التي تناسبك عبر الأزرار أدناه.'
+    )
     .addFields(
-      { name: 'لعبة النرد 🎲', value: '> يفوز صاحب أعلى مجموع من ثلاث رميات.' },
-      { name: 'الرقم التقريبي 📊', value: '> حاول الاقتراب من الرقم المستهدف؛ يفوز صاحب أقل فرق.' },
-      { name: 'أكس أو ❌', value: '> أكمل ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.' },
-      { name: 'حجرة ورقة مقص ✂️', value: '> يختار كل لاعب سراً ثم تتم مقارنة الاختيارين.' },
-    );
+      { name: '🎲 - **لعبة الزهر**', value: '> **لديك ثلاث محاولات للحصول على أعلى رقم والفوز! (التعادل ليس فوزاً).**' },
+      { name: '📊 - **لعبة الرقم التقريبي**', value: '> **حاول الاقتراب من الرقم المستهدف؛ يفوز صاحب أقل فرق.**' },
+      { name: '❌ - **لعبة أكس أو**', value: '> **كوّن ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.**' },
+      { name: '✂️ - **حجرة ورقة مقص**', value: '> **يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.**' },
+    )
+    .setFooter({
+      text: 'Golden Casino | اختر بحكمة واستمتع!',
+      iconURL: client.user.displayAvatarURL(),
+    });
   const sent = await challengeChannel.send({ content: message.author.toString(), embeds: [embed], components: gameRows(g), allowedMentions: { users: [message.author.id] } }).catch(() => null);
   if (!sent) { delete db.games[id]; return message.reply('تعذر إرسال التحدي.'); }
   g.message = sent.id;
@@ -1529,13 +1540,17 @@ function rpsEmbed(g) {
     .setFooter({ text: 'الرهان: ' + fmt(g.bet) });
 }
 function gameRows(g) {
-  if (g.status === 'pending') return [new ActionRowBuilder().addComponents(
-    btn('g:dice:' + g.id, 'النرد 🎲', ButtonStyle.Primary),
-    btn('g:close:' + g.id, 'الرقم التقريبي 📊', ButtonStyle.Primary),
-    btn('g:selectxo:' + g.id, 'أكس أو ❌', ButtonStyle.Primary),
-    btn('g:rps:' + g.id, 'حجرة ورقة مقص ✂️', ButtonStyle.Primary),
-    btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger),
-  )];
+  if (g.status === 'pending') return [
+    new ActionRowBuilder().addComponents(
+      btn('g:dice:' + g.id, 'النرد', ButtonStyle.Secondary).setEmoji('🎲'),
+      btn('g:close:' + g.id, 'الرقم التقريبي', ButtonStyle.Secondary).setEmoji('📊'),
+      btn('g:selectxo:' + g.id, 'اكس او', ButtonStyle.Secondary).setEmoji('❌'),
+    ),
+    new ActionRowBuilder().addComponents(
+      btn('g:rps:' + g.id, 'حجرة ورقة مقص', ButtonStyle.Secondary).setEmoji('✂️'),
+      btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger).setEmoji('🚫'),
+    ),
+  ];
   if (g.status === 'awaiting_accept') return [new ActionRowBuilder().addComponents(
     btn('g:accept:' + g.id, 'قبول', ButtonStyle.Success),
     btn('g:decline:' + g.id, 'رفض', ButtonStyle.Danger),
@@ -1735,8 +1750,15 @@ async function gameButton(i, parts) {
     const details = descriptions[g.mode];
     const waiting = new EmbedBuilder()
       .setColor(0x000000)
-      .setDescription('> تنبيه: في حال عدم استجابة الطرفين و عدم اكمال التحدي يؤدي الى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب اي مبلغ من الطرفين.')
-      .addFields(details, { name: 'المبلغ:', value: fmt(g.bet) });
+      .setTitle('**> برجاء انتظار موافقة العضو .**')
+      .setDescription(
+        '> تنبيه: في حال عدم استجابة الطرفين وعدم إكمال التحدي، يؤدي ذلك إلى خصم نصف المبلغ من الطرفين.\n' +
+        '> عند التعادل لا يتم سحب أي مبلغ من الطرفين.\n\n' +
+        '> العضو الذي قمت بتحديده: <@' + g.p2 + '>\n' +
+        '> المبلغ الذي قمت بتحديده: `' + fmt(g.bet) + '`'
+      )
+      .addFields({ name: details.name, value: details.value }, { name: 'المبلغ:', value: fmt(g.bet) })
+      .setFooter({ text: 'Golden Casino | بانتظار موافقة اللاعب' });
     await save();
     await i.deferReply({ ephemeral: true });
     await i.message.edit({
