@@ -9,8 +9,12 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 function clone(value) {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value));
+  if (value === undefined || value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return new Date(value.getTime());
+  if (Array.isArray(value)) return value.map(clone);
+  const out = {};
+  for (const [key, item] of Object.entries(value)) out[key] = clone(item);
+  return out;
 }
 function getPath(obj, key) {
   return String(key).split('.').reduce((v, part) => v == null ? undefined : v[part], obj);
