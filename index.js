@@ -2043,6 +2043,9 @@ async function challenge(message, args) {
       { name: '📊 - **لعبة الرقم التقريبي**', value: '> **حاول الاقتراب من الرقم المستهدف؛ يفوز صاحب أقل فرق.**' },
       { name: '❌ - **لعبة أكس أو**', value: '> **كوّن ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.**' },
       { name: '✂️ - **حجرة ورقة مقص**', value: '> **يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.**' },
+      { name: '🃏 - **الذاكرة**', value: '> **اعثر على الأزواج المتطابقة.**' },
+      { name: '🔢 - **ترتيب الأرقام**', value: '> **رتّب خمسة أرقام تصاعدياً خلال أربع جولات.**' },
+      { name: '💣 - **Bomb Chips**', value: '> **تجنب القنابل المخفية في لوحة الخصم.**' },
     )
     .setFooter({
       text: 'Batoot Casino | اختر بحكمة واستمتع!',
@@ -2114,6 +2117,34 @@ function rpsEmbed(g) {
     .setDescription('<@' + g.p1 + '>: ' + (p1 ? labels[p1] : 'بانتظار الاختيار') + '\n<@' + g.p2 + '>: ' + (p2 ? labels[p2] : 'بانتظار الاختيار'))
     .setFooter({ text: 'الرهان: ' + fmt(g.bet) });
 }
+
+function shuffleCasino(list) {
+ const a=[...list]; for(let n=a.length-1;n>0;n--){const j=crypto.randomInt(n+1);[a[n],a[j]]=[a[j],a[n]];} return a;
+}
+function initMatchGame(g){
+ const faces=['🍒','🍋','🍇','🍉','🍓','🥝','🍍','🥥'];g.matchCards=shuffleCasino([...faces,...faces]);g.matchFound=[];g.matchOpen=[];g.matchScores={[g.p1]:0,[g.p2]:0};g.matchTurn=crypto.randomInt(2)?g.p1:g.p2;
+}
+function initSortGame(g){
+ g.sortRound=1;g.sortScores={[g.p1]:0,[g.p2]:0};g.sortDigits=shuffleCasino([1,2,3,4,5,6,7,8,9]).slice(0,5);g.sortProgress={[g.p1]:[],[g.p2]:[]};
+}
+function gameBoardEmbed(g){
+ const e=new EmbedBuilder().setColor(0x5865f2).setFooter({text:'Batoot Casino'});
+ if(g.mode==='match') e.setTitle('🃏 لعبة الذاكرة').setDescription('الدور: <@'+g.matchTurn+'>\nالنقاط: <@'+g.p1+'> '+g.matchScores[g.p1]+' — <@'+g.p2+'> '+g.matchScores[g.p2]+'\nاقلب بطاقتين متطابقتين.').addFields({name:'اللوحة',value:g.matchCards.map((v,n)=>g.matchFound.includes(n)||g.matchOpen.includes(n)?v:String(n+1)).join(' | ')});
+ if(g.mode==='sortnum') e.setTitle('🔢 ترتيب الأرقام — الجولة '+g.sortRound+'/4').setDescription('رتّب الأرقام الخمسة تصاعدياً. أول لاعب يكمل صحيحاً يفوز بالجولة.\nالنقاط: <@'+g.p1+'> '+g.sortScores[g.p1]+' — <@'+g.p2+'> '+g.sortScores[g.p2]);
+ if(g.mode==='bombchips') e.setTitle('💣 Bomb Chips').setDescription('اختر خانة من لوحة الخصم. ثلاث إصابات بالقنابل تعني الخسارة.\nالدور: <@'+g.turn+'>').addFields({name:'اللوحة',value:g.bombRevealed.map((v,n)=>v===null?String(n+1):v).join(' | ')});
+ return e;
+}
+function gameSpecialRows(g){
+ if(g.mode==='match') return [0,1,2,3].map(row=>new ActionRowBuilder().addComponents(...[0,1,2,3].map(col=>{const n=row*4+col,shown=g.matchFound.includes(n)||g.matchOpen.includes(n);return btn('g:match:'+n+':'+g.id,shown?g.matchCards[n]:String(n+1),ButtonStyle.Secondary,shown);})));
+ if(g.mode==='sortnum') return [new ActionRowBuilder().addComponents(...g.sortDigits.map(n=>btn('g:sort:'+n+':'+g.id,String(n),ButtonStyle.Primary)))];
+ if(g.mode==='bombchips') return [0,1].map(row=>new ActionRowBuilder().addComponents(...[0,1,2,3,4].slice(row*5,row*5+5).filter(n=>n<9).map(n=>btn('g:bomb:'+n+':'+g.id,String(n+1),ButtonStyle.Primary,g.bombRevealed[n]!==null))));
+ return [];
+}
+async function updateSpecialGame(g){
+ const ch=await client.channels.fetch(g.channel).catch(()=>null),msg=ch&&ch.isTextBased()?await ch.messages.fetch(g.message).catch(()=>null):null;
+ if(msg) await msg.edit({embeds:[gameBoardEmbed(g)],components:gameSpecialRows(g)}).catch(()=>{});
+}
+
 function gameRows(g) {
   if (g.status === 'pending') return [
     new ActionRowBuilder().addComponents(
@@ -2123,6 +2154,9 @@ function gameRows(g) {
     ),
     new ActionRowBuilder().addComponents(
       btn('g:rps:' + g.id, 'حجرة ورقة مقص', ButtonStyle.Secondary).setEmoji('✂️'),
+      btn('g:match:' + g.id, 'الذاكرة', ButtonStyle.Secondary),
+      btn('g:sortnum:' + g.id, 'ترتيب الأرقام', ButtonStyle.Secondary),
+      btn('g:bombchips:' + g.id, 'Bomb Chips', ButtonStyle.Secondary),
       btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger).setEmoji('🚫'),
     ),
   ];
@@ -2135,6 +2169,7 @@ function gameRows(g) {
     btn('g:finish:' + g.id, 'finish', ButtonStyle.Success),
     btn('g:high:' + g.id, g.closeRanges.high[0] + ' - ' + g.closeRanges.high[1], ButtonStyle.Primary),
   )];
+  if (g.status === 'playing' && ['match','sortnum','bombchips'].includes(g.mode)) return gameSpecialRows(g);
   if (g.status === 'playing' && g.mode === 'dice') return [new ActionRowBuilder().addComponents(
     btn('g:roll:' + g.id, 'العب نردك', ButtonStyle.Primary),
   )];
@@ -2164,7 +2199,7 @@ async function editGame(g, title, description, components) {
   const ch = await client.channels.fetch(g.channel).catch(() => null);
   if (!ch || !ch.isTextBased()) return;
   const msg = await ch.messages.fetch(g.message).catch(() => null);
-  const embed = g.mode === 'close' ? legacyCloseEmbed(g)
+  const embed = ['match','sortnum','bombchips'].includes(g.mode) ? gameBoardEmbed(g) : g.mode === 'close' ? legacyCloseEmbed(g)
     : g.mode === 'xo' ? xoEmbed(g)
     : g.mode === 'rps' ? rpsEmbed(g)
     : legacyGameEmbed(g);
@@ -2306,7 +2341,7 @@ async function gameButton(i, parts) {
   const g = db.games[id];
   if (!g) return ephemeral(i, 'هذا التحدي غير موجود أو انتهى.');
   const uid = i.user.id;
-  if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps'].includes(action)) {
+  if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps', 'match', 'sortnum', 'bombchips'].includes(action)) {
     if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
     if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
     if (action === 'cancel') {
@@ -2326,6 +2361,9 @@ async function gameButton(i, parts) {
       close: { name: '📊 الرقم التقريبي:', value: '> حاول الاقتراب من الرقم المستهدف؛ يفوز صاحب أقل فرق.' },
       xo: { name: '❌ أكس أو:', value: '> أكمل ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.' },
       rps: { name: '✂️ حجرة ورقة مقص:', value: '> يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.' },
+      match: { name: '🃏 الذاكرة:', value: '> اعثر على الأزواج المتطابقة.' },
+      sortnum: { name: '🔢 ترتيب الأرقام:', value: '> رتّب خمسة أرقام تصاعدياً في أربع جولات.' },
+      bombchips: { name: '💣 Bomb Chips:', value: '> تجنب القنابل المخفية في لوحة الخصم.' },
     };
     const details = descriptions[g.mode];
     const waiting = new EmbedBuilder()
@@ -2372,6 +2410,9 @@ async function gameButton(i, parts) {
     g.expires = Date.now() + CFG.gameMs;
     g.rolls = { [g.p1]: [], [g.p2]: [] };
     if (g.mode === 'close') initializeApproximateGame(g);
+    else if (g.mode === 'match') initMatchGame(g);
+    else if (g.mode === 'sortnum') initSortGame(g);
+    else if (g.mode === 'bombchips') { g.bombs = { [g.p1]: shuffleCasino([0,1,2,3,4,5,6,7,8]).slice(0,3), [g.p2]: shuffleCasino([0,1,2,3,4,5,6,7,8]).slice(0,3) }; g.bombRevealed=Array(9).fill(null);g.bombHits={[g.p1]:0,[g.p2]:0};g.turn=crypto.randomInt(2)?g.p1:g.p2; }
     else if (g.mode === 'xo') {
       g.board = Array(9).fill(null);
       g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
@@ -2454,6 +2495,34 @@ async function gameButton(i, parts) {
     const result = '<@' + g.p1 + '> اختار ' + labels[a] + '\n<@' + g.p2 + '> اختار ' + labels[b];
     await settle(g, winner, result);
     return;
+  }
+  if (action === 'match' || action === 'sort' || action === 'bomb') {
+    if(g.status!=='playing'||!['match','sortnum','bombchips'].includes(g.mode)) return ephemeral(i,'اللعبة غير نشطة.');
+    if(uid!==g.p1&&uid!==g.p2) return ephemeral(i,'أنت لست أحد اللاعبين.');
+    if(action==='match'){
+      if(uid!==g.matchTurn)return ephemeral(i,'ليس دورك الآن.');
+      const n=Number(parts[2]);if(!Number.isInteger(n)||n<0||n>15||g.matchFound.includes(n)||g.matchOpen.includes(n))return ephemeral(i,'البطاقة غير متاحة.');
+      g.matchOpen.push(n);await i.deferUpdate();
+      if(g.matchOpen.length===2){const [a,b]=g.matchOpen;if(g.matchCards[a]===g.matchCards[b]){g.matchFound.push(a,b);g.matchScores[uid]++;g.matchOpen=[];if(g.matchFound.length===16)return settle(g,g.matchScores[g.p1]===g.matchScores[g.p2]?null:(g.matchScores[g.p1]>g.matchScores[g.p2]?g.p1:g.p2),'نتيجة الذاكرة: '+g.matchScores[g.p1]+' — '+g.matchScores[g.p2]);}else{g.matchTurn=uid===g.p1?g.p2:g.p1;g.matchOpen=[];}}
+      await save();await updateSpecialGame(g);return;
+    }
+    if(action==='sort'){
+      if(g.mode!=='sortnum')return ephemeral(i,'اللعبة غير نشطة.');
+      const n=Number(parts[2]),seq=g.sortProgress[uid],sorted=[...g.sortDigits].sort((a,b)=>a-b);
+      if(!g.sortDigits.includes(n)||seq.includes(n))return ephemeral(i,'رقم غير متاح.');
+      seq.push(n);await i.deferUpdate();
+      if(n!==sorted[seq.length-1]){g.sortProgress[uid]=[];await save();await updateSpecialGame(g);return;}
+      if(seq.length===5){g.sortScores[uid]++;if(g.sortRound===4)return settle(g,g.sortScores[g.p1]===g.sortScores[g.p2]?null:(g.sortScores[g.p1]>g.sortScores[g.p2]?g.p1:g.p2),'نتيجة ترتيب الأرقام: '+g.sortScores[g.p1]+' — '+g.sortScores[g.p2]);g.sortRound++;g.sortDigits=shuffleCasino([1,2,3,4,5,6,7,8,9]).slice(0,5);g.sortProgress={[g.p1]:[],[g.p2]:[]};}
+      await save();await updateSpecialGame(g);return;
+    }
+    if(g.mode!=='bombchips')return ephemeral(i,'اللعبة غير نشطة.');
+    if(uid!==g.turn)return ephemeral(i,'ليس دورك الآن.');
+    const n=Number(parts[2]),target=uid===g.p1?g.p2:g.p1;
+    if(!Number.isInteger(n)||n<0||n>8||g.bombRevealed[n]!==null)return ephemeral(i,'الخانة غير متاحة.');
+    const hit=g.bombs[target].includes(n);g.bombRevealed[n]=hit?'💣':'💎';if(hit)g.bombHits[uid]++;
+    await i.deferUpdate();if(g.bombHits[uid]>=3)return settle(g,target,'<@'+uid+'> أصاب ثلاث قنابل وخسر.');
+    if(g.bombRevealed.every(x=>x!==null))return settle(g,null,'انتهت الخانات بالتعادل.');
+    g.turn=target;await save();await updateSpecialGame(g);return;
   }
   if (action === 'xo') {
     if (g.status !== 'playing' || g.mode !== 'xo') return ephemeral(i, 'لعبة أكس أو غير نشطة.');
