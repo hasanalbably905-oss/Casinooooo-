@@ -381,7 +381,7 @@ async function adminBalance(message, args, add) {
     .setDescription(add ? 'تم الإضافة بنجاح' : 'تم حذف بنجاح')
     .addFields(
       { name: 'بواسطة', value: message.author.toString() },
-      { name: add ? 'اضاف' : 'حذف', value: '$' + fmt(n) },
+      { name: add ? 'اضاف' : 'حذف', value: String.fromCharCode(36) + fmt(n) },
       { name: add ? 'المستلم' : 'من', value: user.toString() },
       { name: 'الرصيد الحالي للمستلم', value: fmt(a.coins) },
     );
