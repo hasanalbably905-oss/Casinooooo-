@@ -1507,6 +1507,7 @@ async function privateRoomCommand(message, args) {
   if (['add', 'اضافة', 'إضافة'].includes(cmd)) {
     const user = message.mentions.users.first();
     if (!user || user.bot || user.id === current.owner) return message.reply('استخدم: `add @عضو`');
+    if (CFG.owners.includes(String(user.id))) return message.reply('لا يمكن إضافة أحد الأونرز إلى قائمة أعضاء الروم.');
     if ((current.addedMembers || []).includes(user.id)) return message.reply('هذا العضو موجود بالفعل في الروم.');
     if ((current.addedMembers || []).length >= 5) return message.reply('الحد الأعلى هو 5 أعضاء إضافيين.');
     const member = await message.guild.members.fetch(user.id).catch(() => null);
@@ -1539,7 +1540,8 @@ async function privateRoomCommand(message, args) {
   }
   if (['unallow', 'منع'].includes(cmd)) {
     const user = message.mentions.users.first();
-    if (!user || user.id === current.owner) return message.reply('استخدم: `unallow @عضو`.');
+    if (!user || user.id === current.owner || user.bot) return message.reply('استخدم: `unallow @عضو`، ولا يمكن منع صاحب الروم أو البوتات.');
+    if (CFG.owners.includes(String(user.id))) return message.reply('لا يمكن منع أحد الأونرز من الروم.');
     const member = await message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return message.reply('يجب أن يكون العضو في السيرفر.');
     await message.channel.permissionOverwrites.edit(user.id, { SendMessages: false });
@@ -1557,10 +1559,15 @@ async function privateRoomCommand(message, args) {
     return message.reply('🔊 تم السماح لـ ' + user + ' بالكتابة مجدداً.');
   }
   if (['rename', 'تسمية', 'اسم'].includes(cmd)) {
-    const name = args.slice(1).join('-').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff-]/g, '').replace(/-+/g, '-').slice(0, 80);
+    const name = args.slice(1).join('-').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 75);
     if (!name) return message.reply('الاستخدام: `rename اسم-الروم`');
-    await message.channel.setName('🎰｜' + name).catch(() => null);
-    return message.reply('✅ تم تحديث اسم الروم.');
+    try {
+      await message.channel.setName('🎰｜' + name);
+      return message.reply('✅ تم تحديث اسم الروم.');
+    } catch (error) {
+      console.error('Private room rename failed:', error);
+      return message.reply('❌ تعذر تغيير اسم الروم. تأكد من صلاحيات البوت.');
+    }
   }
   if (['اعضاء-الروم', 'roommembers'].includes(cmd)) {
     const ids = [...new Set([current.owner, ...(current.addedMembers || [])])];
@@ -2518,7 +2525,7 @@ client.on('interactionCreate', async i => {
     }
     const parts = i.customId.split(':');
     const family = parts[0];
-    if (i.customId === 'r:buy') return withLock('private-room-buy:' + i.user.id, () => buyPrivateRoom(i));
+    if (i.customId === 'r:buy') return withLock('private-room-buy:global', () => buyPrivateRoom(i));
     if (i.customId.startsWith('bm:')) return withLock('bot-mini:' + i.customId.split(':')[2], () => botMiniGameButton(i));
     if (i.customId.startsWith('bj:')) return withLock('blackjack:' + i.customId.split(':')[2], () => blackjackButton(i));
     if (i.customId.startsWith('wh:')) return withLock('wheel:' + i.customId.split(':')[2], () => wheelButton(i));
