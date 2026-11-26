@@ -16,8 +16,10 @@ function getTarget(message, args) {
 }
 async function handleGoldenExtras(message, options = {}) {
   if (!message?.guild || message.author?.bot) return false;
-  const args = String(message.content || '').trim().split(/\s+/);
+  const fullText = String(message.content || '').trim();
+  const args = fullText.split(/\s+/);
   const cmd = (args.shift() || '').toLowerCase();
+  if (fullText.toLowerCase() === 'برايم دايلي') { args.length = 0; }
   const me = options.account(message.author.id);
 
   if (cmd === 'ريب') {
@@ -91,7 +93,7 @@ async function handleGoldenExtras(message, options = {}) {
     return true;
   }
 
-  if (cmd === 'برايم دايلي') {
+  if (fullText.toLowerCase() === 'برايم دايلي') {
     const expiry = Number(me.primeExpires) || (Date.parse(me.primeExpires) || 0);
     if (!expiry || expiry <= Date.now()) {
       await message.reply('هذا الأمر مخصص لمشتركي Prime النشطين فقط.');
