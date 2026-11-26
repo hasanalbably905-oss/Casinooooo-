@@ -2151,6 +2151,7 @@ async function refund(g, reason) {
     ? reason + '\nتم خصم نصف الرهان من كل لاعب بسبب عدم إكمال التحدي.'
     : reason;
   await save();
+  await recordLiveBetResult('pvp:' + g.id, { userId: g.p1, opponentId: g.p2, amount: g.bet, game: 'تحدي الأعضاء', status: 'refund', payout: returned * 2, detail: g.result });
   await editGame(g, 'تم إلغاء التحدي', g.result, []);
 }
 async function sweep() {
@@ -2309,6 +2310,7 @@ async function gameButton(i, parts) {
       g.turn = null;
     } else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
     await save();
+    await recordLiveBetStart('pvp:' + g.id, { userId: g.p1, opponentId: g.p2, amount: g.bet, game: 'تحدي الأعضاء • ' + (g.mode || 'لعبة') });
     await trackTournamentBet(g.p1, g.bet);
     await trackTournamentBet(g.p2, g.bet);
     await i.deferReply({ ephemeral: true });
