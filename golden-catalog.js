@@ -118,18 +118,9 @@ const GAMES = [
 ];
 
 const OWNER_GROUPS = [
-  {
-    name: '💰 إدارة الأموال والبيانات',
-    value: '`Rsall` — إعادة تعيين البيانات\n`resetdata` — إعادة تعيين البيانات الأساسية\n`rstdatagames` — إعادة تعيين بيانات الألعاب\n`totalwithdraw` — إجمالي السحوبات\n`totalcoins` — إجمالي الأرصدة',
-  },
-  {
-    name: '🎰 إدارة اليانصيب والمسابقات',
-    value: '`botola [ID] [جوائز] [قيمة]` — إنشاء بطولة/يانصيب\n`botolacancel` — إلغاء البطولة\n`deletebotola` — حذف البطولة\n`rmvusr [ID]` — إزالة لاعب\n`resetplaygame` — إعادة تعيين بيانات اللعب',
-  },
-  {
-    name: '🔧 أوامر النظام والتصحيح',
-    value: '`!resetcodes` — إعادة تعيين الأكواد\n`debughidden` — معلومات التصحيح\n`!setpermission access @user` — منح صلاحية\n`!showteam` — عرض فريق العمل',
-  },
+ { name: '💰 إدارة الأموال والبيانات', value: '`totalcoins` — إجمالي الأرصدة\n`totalwithdraw` — إحصائيات السحوبات\n`resetdata تأكيد` أو `Rsall تأكيد` — إعادة تعيين البيانات بعد التأكيد\n`rstdatagames تأكيد` — إعادة تعيين جلسات الألعاب' },
+ { name: '🏆 إدارة البطولات', value: '`botola` — صيغة إنشاء البطولة المتاحة\n`botolacancel` / `deletebotola` — إلغاء البطولة\n`rmvusr USER_ID` — إزالة لاعب من البطولة\n`resetplaygame تأكيد` — إعادة تعيين جلسات اللعب' },
+ { name: '🔧 النظام والتصحيح', value: '`!resetcodes تأكيد` — حذف أكواد الاسترداد\n`debughidden` — فحص الحسابات المخفية\n`!showteam` — عرض فريق العمل' },
 ];
 
 async function handleGoldenCatalog(message, options = {}) {
@@ -165,7 +156,7 @@ async function handleGoldenCatalog(message, options = {}) {
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
       .setTitle('⚙️ أوامر الأونرز — AHELP')
-      .setDescription('أوامر الإدارة الخاصة المنقولة من Batoot Casino.')
+      .setDescription('أوامر الأونرز المتاحة في Batoot Casino.')
       .addFields(OWNER_GROUPS.map(group => ({ ...group, inline: false })))
       .setFooter({ text: 'استخدم أوامر الإدارة بمسؤولية' })
       .setTimestamp();
