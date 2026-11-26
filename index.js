@@ -1249,6 +1249,7 @@ async function botChallengeSelect(i) {
   if (selected === 'wheel') return startWheel(fakeMessage, challenge.stake);
   if (selected === 'tictactoe') return startBotTicTacToe(fakeMessage, challenge);
   if (selected === 'towers') return startBotTowers(fakeMessage, challenge);
+  if (selected === 'takribi') return startBotTakribi(fakeMessage, challenge);
   return startBotMiniGame(fakeMessage, challenge, selected);
 }
 
@@ -1283,6 +1284,37 @@ async function settleGoldenBotGame(challenge, outcome, detail, multiplier = 0.93
       .setFooter({ text: 'Batoot Casino • Bot Challenge' }).setTimestamp()],
     components: [],
   }).catch(() => {});
+}
+
+async function startBotTakribi(message, challenge) {
+  const wallet=account(challenge.userId);
+  if(wallet.coins<challenge.stake){challenge.status='cancelled';await save();return message.reply('رصيدك غير كافٍ لبدء اللعبة.');}
+  const targets=[19,22,25,28,31,34,37,40,43,46,49,52,55,58,61,64,67,70,73,76,79];
+  const ranges={
+    22:{left:[2,4],right:[6,8]},25:{left:[3,5],right:[6,9]},28:{left:[3,5],right:[7,10]},
+    31:{left:[3,6],right:[8,11]},34:{left:[3,6],right:[8,12]},37:{left:[4,7],right:[9,13]},
+    40:{left:[4,7],right:[10,14]},43:{left:[4,8],right:[10,15]},46:{left:[4,8],right:[11,16]},
+    49:{left:[4,9],right:[12,17]},52:{left:[5,10],right:[13,18]},55:{left:[5,10],right:[13,19]},
+    58:{left:[5,10],right:[14,20]},61:{left:[6,11],right:[15,21]},64:{left:[6,11],right:[15,22]},
+    67:{left:[6,12],right:[16,23]},70:{left:[6,12],right:[16,24]},73:{left:[6,13],right:[17,25]},
+    76:{left:[7,13],right:[18,26]},79:{left:[7,14],right:[19,27]}
+  };
+  const target=targets[crypto.randomInt(targets.length)];
+  const cfg=ranges[target]||{left:[2,4],right:[5,7]};
+  const state=challenge.takribi={target,left:cfg.left,right:cfg.right,player:[],bot:[],playerDone:false,botDone:false};
+  challenge.status='playing';challenge.mode='takribi';challenge.expiresAt=Date.now()+90000;
+  const total=a=>a.reduce((x,y)=>x+y,0);
+  const makeEmbed=()=>new EmbedBuilder().setColor(0xf1c40f).setTitle('🎯 لعبة الرقم التقريبي ضد البوت')
+    .setDescription('**الرقم المستهدف:** '+target+'\n\n**أنت:** '+(state.player.length?state.player.join(' + ')+' = **'+total(state.player)+'**':'لم تلعب بعد')+(state.playerDone?' ✅':'')+
+      '\n\n**🤖 البوت:** '+(state.bot.length?state.bot.join(' + ')+' = **'+total(state.bot)+'**':'لم يلعب بعد')+(state.botDone?' ✅':''))
+    .setFooter({text:'اختر مدى الرقم أو أنهِ دورك • Batoot Casino'});
+  const makeRows=()=>[new ActionRowBuilder().addComponents(
+    btn('bmt:left:'+challenge.id,'⬅️ '+cfg.left[0]+' - '+cfg.left[1],ButtonStyle.Primary,state.playerDone),
+    btn('bmt:stop:'+challenge.id,'إنهاء دوري',ButtonStyle.Success,state.playerDone||!state.player.length),
+    btn('bmt:right:'+challenge.id,'➡️ '+cfg.right[0]+' - '+cfg.right[1],ButtonStyle.Primary,state.playerDone)
+  )];
+  const sent=await message.reply({embeds:[makeEmbed()],components:makeRows()});
+  challenge.gameMessageId=sent.id;await save();
 }
 
 async function startBotTicTacToe(message, challenge) {
@@ -1488,6 +1520,57 @@ async function botMiniGameButton(i) {
       .setFooter({text:'Batoot Casino • Golden Dice Rules'})],components:[new ActionRowBuilder().addComponents(btn('bm:roll:'+id,'🎲 رمي النرد',ButtonStyle.Success))]});
   }
   let outcome='loss',detail='';
+  if(challenge.mode==='takribi'&&['left','right','stop'].includes(action)){
+    const st=challenge.takribi;
+    if(!st)return ephemeral(i,'بيانات الجولة غير متاحة.');
+    const sum=a=>a.reduce((x,y)=>x+y,0);
+    const playerTotal=sum(st.player),botTotal=sum(st.bot);
+    if(st.playerDone)return ephemeral(i,'أنهيت دورك بالفعل.');
+    if(action==='stop')st.playerDone=true;
+    else{
+      const range=action==='left'?st.left:st.right;
+      const gap=st.target-playerTotal;
+      if(gap<range[0])return ephemeral(i,'هذا المدى يتجاوز الرقم المستهدف؛ اختر المدى الآخر أو أنهِ دورك.');
+      st.player.push(crypto.randomInt(range[0],range[1]+1));
+      if(sum(st.player)>=st.target)st.playerDone=true;
+    }
+    if(!st.botDone){
+      const botGap=st.target-sum(st.bot);
+      if(botGap>0){
+        const choices=[st.left,st.right].filter(r=>r[0]<=botGap);
+        const range=choices.length?choices.sort((a,b)=>Math.min(b[1],botGap)-Math.min(a[1],botGap))[0]:(botGap>0?st.left:null);
+        if(range)st.bot.push(crypto.randomInt(range[0],range[1]+1));
+      }
+      if(sum(st.bot)>=st.target||st.bot.length>=8)st.botDone=true;
+    }
+    if(st.playerDone&&!st.botDone){
+      while(!st.botDone&&st.bot.length<8){
+        const gap=st.target-sum(st.bot);
+        const choices=[st.left,st.right].filter(r=>r[0]<=gap);
+        const range=choices.length?choices.sort((a,b)=>Math.min(b[1],gap)-Math.min(a[1],gap))[0]:null;
+        if(!range){st.botDone=true;break;}
+        st.bot.push(crypto.randomInt(range[0],range[1]+1));
+        if(sum(st.bot)>=st.target)st.botDone=true;
+      }
+    }
+    await i.deferUpdate();
+    if(st.playerDone&&st.botDone){
+      const p=sum(st.player),b=sum(st.bot),pd=Math.abs(st.target-p),bd=Math.abs(st.target-b);
+      const outcome=p===b?'draw':p===st.target?'win':b===st.target?'loss':p>st.target&&b<=st.target?'loss':b>st.target&&p<=st.target?'win':pd<bd?'win':bd<pd?'loss':'draw';
+      const detail='الهدف: **'+st.target+'**\nرمياتك: **'+(st.player.join(' + ')||'—')+' = '+p+'**\nرميات البوت: **'+(st.bot.join(' + ')||'—')+' = '+b+'**';
+      await settleGoldenBotGame(challenge,outcome,detail);
+      return;
+    }
+    await save();
+    return i.message.edit({embeds:[new EmbedBuilder().setColor(0xf1c40f).setTitle('🎯 الرقم التقريبي ضد البوت')
+      .setDescription('**الهدف:** '+st.target+'\n**أنت:** '+(st.player.join(' + ')||'—')+' = **'+sum(st.player)+'**'+(st.playerDone?' ✅':'')+
+      '\n**البوت:** '+(st.bot.join(' + ')||'—')+' = **'+sum(st.bot)+'**'+(st.botDone?' ✅':''))
+      .setFooter({text:'اختر مدى الرقم أو أنهِ دورك'})],components:[new ActionRowBuilder().addComponents(
+        btn('bmt:left:'+challenge.id,'⬅️ '+st.left[0]+' - '+st.left[1],ButtonStyle.Primary,st.playerDone||st.target-sum(st.player)<st.left[0]),
+        btn('bmt:stop:'+challenge.id,'إنهاء دوري',ButtonStyle.Success,st.playerDone||!st.player.length),
+        btn('bmt:right:'+challenge.id,'➡️ '+st.right[0]+' - '+st.right[1],ButtonStyle.Primary,st.playerDone||st.target-sum(st.player)<st.right[0])
+      )]});
+  }
   if(challenge.mode==='takribi'&&/^guess[1-5]$/.test(action)){
     const guess=Number(action.slice(5));detail='اختيارك: **'+guess+'**\nالرقم السري: **'+challenge.secret+'**';outcome=guess===challenge.secret?'win':'loss';
   }else if(challenge.mode==='find_ball'&&/^cup[1-3]$/.test(action)){
