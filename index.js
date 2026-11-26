@@ -155,8 +155,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {} }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {} };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, transfers: old.transfers || {} }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, transfers: {} };
 
 let writeChain = Promise.resolve();
 function save() {
@@ -313,6 +313,113 @@ async function targetUser(message, token) {
   const id = String(token || '').replace(/[<@!>]/g, '');
   if (!/^\d{17,20}$/.test(id)) return null;
   return client.users.fetch(id).catch(() => null);
+}
+async function createMemberTransfer(message, args) {
+  const target = await targetUser(message, args[1]);
+  const rawAmount = args[2];
+  const amount = amountOf(rawAmount);
+  if (!target) return message.reply('❎ **حدد العضو الذي تريد التحويل إليه**\nمثال: `تحويل @عضو 100k`');
+  if (!amount) return message.reply('❎ **المبلغ غير صحيح**\nاستخدم رقماً أو K أو M، مثال: `تحويل @عضو 250k`');
+  if (target.bot) return message.reply('❎ لا يمكن تحويل الرصيد إلى بوت.');
+  if (target.id === message.author.id) return message.reply('❎ لا يمكنك التحويل إلى نفسك.');
+  const targetMember = await message.guild.members.fetch(target.id).catch(() => null);
+  if (!targetMember) return message.reply('❎ يجب أن يكون المستلم عضواً في السيرفر.');
+  const senderData = account(message.author.id);
+  const receiverData = account(target.id);
+  if (senderData.coins < amount) {
+    return message.reply('❎ **رصيدك لا يكفي**\nرصيدك الحالي: **' + fmt(senderData.coins) + '**\nالمبلغ المطلوب: **' + fmt(amount) + '**');
+  }
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  const transfer = {
+    id, from: message.author.id, to: target.id, amount,
+    status: 'pending', createdAt: Date.now(), expiresAt: Date.now() + 120000,
+    channelId: message.channel.id, guildId: message.guild.id,
+  };
+  db.transfers[id] = transfer;
+  await save();
+  const embed = new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle('تأكيد تحويل رصيد')
+    .setDescription(
+      '**يرجى مراجعة تفاصيل التحويل قبل التأكيد.**\n\n' +
+      '**المرسل:** ' + message.author + '\n' +
+      '**المستلم:** ' + target + '\n' +
+      '**المبلغ:** ' + fmt(amount) + ' كوينز\n' +
+      '**رصيدك الحالي:** ' + fmt(senderData.coins) + '\n' +
+      '**الرصيد بعد التحويل:** ' + fmt(senderData.coins - amount) + '\n\n' +
+      'لن يتم خصم أي مبلغ إلا بعد ضغطك على زر **تأكيد التحويل**.\n' +
+      'ينتهي هذا الطلب خلال دقيقتين، ويمكنك إلغاؤه دون أي خصم.'
+    )
+    .setFooter({ text: 'Batoot Casino • نظام التحويل الآمن' })
+    .setTimestamp();
+  const row = new ActionRowBuilder().addComponents(
+    btn('t:confirm:' + id, 'تأكيد التحويل', ButtonStyle.Success),
+    btn('t:cancel:' + id, 'إلغاء', ButtonStyle.Danger),
+  );
+  const sent = await message.reply({ embeds: [embed], components: [row] }).catch(async error => {
+    transfer.status = 'cancelled';
+    transfer.cancelReason = 'message_failed';
+    await save();
+    throw error;
+  });
+  transfer.messageId = sent.id;
+  await save();
+}
+async function transferButton(i, parts) {
+  const action = parts[1];
+  const id = parts[2];
+  const transfer = db.transfers[id];
+  if (!transfer || transfer.status !== 'pending') return ephemeral(i, 'هذا التحويل غير متاح أو تم التعامل معه مسبقاً.');
+  if (i.user.id !== transfer.from) return ephemeral(i, 'فقط صاحب طلب التحويل يستطيع تأكيده أو إلغاءه.');
+  if (Date.now() > transfer.expiresAt) {
+    transfer.status = 'expired';
+    transfer.finishedAt = Date.now();
+    await save();
+    await i.update({ content: 'انتهت مهلة التحويل. لم يتم خصم أي رصيد.', embeds: [], components: [] }).catch(() => {});
+    return;
+  }
+  if (action === 'cancel') {
+    transfer.status = 'cancelled';
+    transfer.finishedAt = Date.now();
+    await save();
+    return i.update({ content: 'تم إلغاء طلب التحويل. لم يتم تغيير أي رصيد.', embeds: [], components: [] });
+  }
+  if (action !== 'confirm') return;
+  const sender = account(transfer.from);
+  const receiver = account(transfer.to);
+  if (sender.coins < transfer.amount) {
+    transfer.status = 'rejected';
+    transfer.finishedAt = Date.now();
+    await save();
+    return i.update({ content: 'فشل التحويل: رصيدك لم يعد كافياً. لم يتم خصم أي مبلغ.', embeds: [], components: [] });
+  }
+  // Update both balances in one synchronous transaction before saving.
+  sender.coins -= transfer.amount;
+  receiver.coins += transfer.amount;
+  transfer.status = 'completed';
+  transfer.finishedAt = Date.now();
+  transfer.senderBalanceAfter = sender.coins;
+  transfer.receiverBalanceAfter = receiver.coins;
+  const historyIds = Object.keys(db.transfers);
+  const finished = historyIds.filter(key => db.transfers[key].status !== 'pending')
+    .sort((a, b) => (db.transfers[a].finishedAt || 0) - (db.transfers[b].finishedAt || 0));
+  for (const oldId of finished.slice(0, Math.max(0, finished.length - 1000))) delete db.transfers[oldId];
+  await save();
+  const embed = new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle('تم التحويل بنجاح')
+    .setDescription('تم نقل الرصيد بين الحسابين وحفظ العملية في سجل التحويلات.')
+    .addFields(
+      { name: 'المرسل', value: '<@' + transfer.from + '>', inline: true },
+      { name: 'المستلم', value: '<@' + transfer.to + '>', inline: true },
+      { name: 'المبلغ المحوّل', value: fmt(transfer.amount) + ' كوينز', inline: false },
+      { name: 'رصيدك بعد التحويل', value: fmt(sender.coins), inline: true },
+      { name: 'رصيد المستلم بعد التحويل', value: fmt(receiver.coins), inline: true },
+      { name: 'رقم العملية', value: '`' + transfer.id + '`', inline: false },
+    )
+    .setFooter({ text: 'Batoot Casino • سجل التحويلات' })
+    .setTimestamp();
+  return i.update({ embeds: [embed], components: [] });
 }
 async function balance(message, user) {
   const member = message.guild.members.cache.get(user.id);
@@ -827,6 +934,7 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (['تحويل', 'transfer', 'pay'].includes(cmd)) return createMemberTransfer(message, args);
     if (cmd === 'شحن') {
       const parsed = legacyAdminAmount(args[1]);
       if (parsed.error) return message.reply('❎ **صيغة الشحن غير صحيحة**\nمثال: `شحن 10m`');
@@ -857,7 +965,7 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس — عرض الرصيد\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر فقط)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر فقط)')] });
+        'فلوس — عرض الرصيد\nتحويل @عضو مبلغ — طلب تحويل رصيد إلى عضو بعد تأكيدك، مثال: تحويل @عضو 250k\nتوب — أعلى 10 أرصدة\nتحدي @عضو مبلغ — تحدٍ في رومات الألعاب\nwithdraw — لوحة السحب في روم السحب\nشحن مبلغ — إرسال أمر #credit (للأونر فقط)، مثال: شحن 10m\nadd @عضو مبلغ — إضافة رصيد (للأونر فقط)\nrmv / remove @عضو مبلغ — حذف رصيد (للأونر فقط)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
@@ -873,6 +981,7 @@ client.on('interactionCreate', async i => {
     }
     if (!i.isButton()) return;
     const parts = i.customId.split(':');
+    if (parts[0] === 't') return transferButton(i, parts);
     if (parts[0] === 'g') return gameButton(i, parts);
     if (parts[0] === 'w') return withdrawalButton(i, parts);
   } catch (error) {
