@@ -125,14 +125,21 @@ class JsonQuery {
 }
 function project(doc, spec) {
   if (!spec) return doc;
-  const fields = typeof spec === 'string' ? spec.split(/\s+/).filter(Boolean) : Object.keys(spec).filter(k => spec[k]);
-  if (!fields.length) return doc;
+  const raw = typeof spec === 'string' ? spec.split(/\\s+/).filter(Boolean) : Object.keys(spec);
+  const excluded = raw.filter(k => k.startsWith('-') || (typeof spec === 'object' && spec[k] === 0)).map(k => k.replace(/^-/, ''));
+  const included = raw.filter(k => !k.startsWith('-') && (typeof spec === 'string' || spec[k])).map(k => k.replace(/^\\+/, ''));
+  if (!included.length && excluded.length) {
+    const out = clone(doc);
+    for (const field of excluded) unsetPath(out, field);
+    return out;
+  }
+  if (!included.length) return doc;
   const out = {};
-  for (const field of fields) {
+  for (const field of included) {
     const value = getPath(doc, field);
     if (value !== undefined) setPath(out, field, clone(value));
   }
-  if (doc._id !== undefined && out._id === undefined) out._id = doc._id;
+  if (doc._id !== undefined && !excluded.includes('_id') && out._id === undefined) out._id = doc._id;
   return out;
 }
 
@@ -216,7 +223,21 @@ function createJsonDatabase(options = {}) {
       return q.asLean ? found : found.map(row => Object.assign(new JsonDocument(), row));
     });
     Model.findOne = filter => new JsonQuery(async q => {
-      let found = rows().find(row => matches(row, filter || {}));
+      let candidates = rows().filter(row => matches(row, filter || {}));
+      if (q.sortSpec) {
+        const entries = Object.entries(q.sortSpec);
+        candidates.sort((a, b) => {
+          for (const [key, direction] of entries) {
+            const av = getPath(a, key), bv = getPath(b, key);
+            if (av === bv) continue;
+            if (av === undefined) return direction < 0 ? 1 : -1;
+            if (bv === undefined) return direction < 0 ? -1 : 1;
+            return (av > bv ? 1 : -1) * (Number(direction) < 0 ? -1 : 1);
+          }
+          return 0;
+        });
+      }
+      let found = candidates[0];
       if (!found) return null;
       found = project(clone(found), q.projection);
       return q.asLean ? found : Object.assign(new JsonDocument(), found);
