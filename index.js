@@ -126,6 +126,11 @@ async function loadGitHubData() {
 }
 
 async function ensureGitHubDataBranch() {
+  const repository = await githubRequest('GET', '/repos/' + GH_REPO);
+  if (repository.private !== true) {
+    githubDataBlocked = true;
+    throw new Error('Refusing to store user balances in a public GitHub repository. Configure GITHUB_REPOSITORY to a private repository.');
+  }
   const branchRefPath = '/repos/' + GH_REPO + '/git/ref/heads/' + encodeURIComponent(GH_BRANCH);
   try {
     await githubRequest('GET', branchRefPath);
