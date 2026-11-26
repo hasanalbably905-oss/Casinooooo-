@@ -867,11 +867,11 @@ async function finishApproximateTurn(g, reason) {
   const aDiff = Math.abs(a - g.closeMax);
   const bDiff = Math.abs(b - g.closeMax);
   const winner = aDiff === bDiff ? null : (aDiff < bDiff ? g.p1 : g.p2);
-  const result = 'الرقم المستهدف: **' + g.closeMax + '**\\n' +
-    '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '** (الفرق: **' + aDiff + '** )\\n' +
-    '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '** (الفرق: **' + bDiff + '** )\\n' +
+  const result = 'الرقم المستهدف: **' + g.closeMax + '**\n' +
+    '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '** (الفرق: **' + aDiff + '** )\n' +
+    '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '** (الفرق: **' + bDiff + '** )\n' +
     (winner ? 'الفائز هو الأقرب إلى الرقم المستهدف، سواء كان مجموعه أعلى أو أقل.' : 'تعادل! اللاعبان على نفس البعد من الرقم المستهدف.') +
-    (reason ? '\\n' + reason : '');
+    (reason ? '\n' + reason : '');
   await settle(g, winner, result);
 }
 async function gameButton(i, parts) {
@@ -897,7 +897,7 @@ async function gameButton(i, parts) {
     g.expires = Date.now() + CFG.inviteMs;
     const details = action === 'dice'
       ? { name: '🎲 لعبة النرد:', value: '> يفوز الذي يحصل على أعلى مجموع من ثلاث مرات, التعادل ليس فوزا !' }
-      : { name: '📊 الرقم التقريبي:', value: '> في كل جولة سوف تحصل على رقم عشوائي, و انت عليك ان تحصل على نفس الرقم او اقل منه, الذي يحصل عليه يفوز, في حال الحصول على اعلى تعتبر خاسر, جولة واحدة لكل تحدي ! انهاء الجولة يعني انهاء التحدي, التعادل ليس فوزا !' };
+      : { name: '📊 الرقم التقريبي:', value: '> حاول الوصول إلى الرقم المستهدف أو الاقتراب منه قدر الإمكان. لا يهم إذا كان مجموعك أعلى أو أقل؛ الفائز هو صاحب أقل فرق بين مجموعه والرقم المستهدف. عند تساوي الفرق تنتهي اللعبة بالتعادل ويُعاد الرهان.' };
     const waiting = new EmbedBuilder()
       .setColor(0x000000)
       .setDescription('> تنبيه: في حال عدم استجابة الطرفين و عدم اكمال التحدي يؤدي الى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب اي مبلغ من الطرفين.')
