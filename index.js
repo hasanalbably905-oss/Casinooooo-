@@ -2970,12 +2970,12 @@ async function updateLiveBetsBoard() {
   const rows = db.liveBets.slice(-12).reverse();
   const description = rows.length ? rows.map((bet, index) =>
     '**' + (index + 1) + '. ' + (bet.game || 'لعبة') + '** — ' + liveBetLabel(bet.status) +
-    '\\n👤 ' + (bet.userId ? '<@' + bet.userId + '>' : 'لاعب') +
+    '\n👤 ' + (bet.userId ? '<@' + bet.userId + '>' : 'لاعب') +
     (bet.opponentId ? ' ضد <@' + bet.opponentId + '>' : '') +
-    '\\n💰 الرهان: **' + fmt(Number(bet.amount) || 0) + '**' +
+    '\n💰 الرهان: **' + fmt(Number(bet.amount) || 0) + '**' +
     (bet.payout > 0 ? ' • الجائزة: **' + fmt(bet.payout) + '**' : '') +
-    (bet.detail ? '\\n_' + String(bet.detail).slice(0, 140) + '_' : '')
-  ).join('\\n\\n') : 'لا توجد رهانات مسجلة حتى الآن.';
+    (bet.detail ? '\n_' + String(bet.detail).slice(0, 140) + '_' : '')
+  ).join('\n\n') : 'لا توجد رهانات مسجلة حتى الآن.';
   const embed = new EmbedBuilder().setColor(0x22C55E)
     .setAuthor({ name: 'BATOOT CASINO • LIVE BETS', iconURL: client.user.displayAvatarURL() })
     .setTitle('🎰 سجل الرهانات المباشر')
