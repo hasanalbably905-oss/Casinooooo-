@@ -240,6 +240,76 @@ function recordMember(member) {
   delete data.leftAt;
   return data;
 }
+
+const inviteUseCache = new Map();
+const INVITE_REWARD = 30000000;
+const INVITE_LOG_CHANNEL_ID = '1575612010043801741';
+
+async function refreshInviteSnapshot(guild) {
+  try {
+    const invites = await guild.invites.fetch();
+    const snapshot = new Map();
+    for (const invite of invites.values()) snapshot.set(invite.code, Number(invite.uses || 0));
+    inviteUseCache.set(guild.id, snapshot);
+    return snapshot;
+  } catch (error) {
+    console.error('Invite snapshot fetch failed. Check Manage Server permission:', error.message);
+    return null;
+  }
+}
+
+async function processInviteJoin(member) {
+  if (!db.settings || db.settings.invitesEnabled !== true || member.user.bot) return;
+  const guild = member.guild;
+  const previous = inviteUseCache.get(guild.id);
+  const currentInvites = await guild.invites.fetch().catch(error => {
+    console.error('Could not fetch invites after member joined:', error.message);
+    return null;
+  });
+  if (!currentInvites) return;
+
+  let usedInvite = null;
+  for (const invite of currentInvites.values()) {
+    const oldUses = previous && previous.has(invite.code) ? previous.get(invite.code) : 0;
+    if (Number(invite.uses || 0) > oldUses) {
+      usedInvite = invite;
+      break;
+    }
+  }
+
+  const nextSnapshot = new Map();
+  for (const invite of currentInvites.values()) nextSnapshot.set(invite.code, Number(invite.uses || 0));
+  inviteUseCache.set(guild.id, nextSnapshot);
+
+  if (!usedInvite || !usedInvite.inviter || usedInvite.inviter.bot) return;
+  db.settings.inviteRewards = db.settings.inviteRewards || {};
+  if (db.settings.inviteRewards[member.id]) return;
+
+  const inviterId = usedInvite.inviter.id;
+  const inviterAccount = account(inviterId);
+  if (!canAddCoins(inviterAccount, INVITE_REWARD)) {
+    console.warn('Invite reward skipped: inviter balance reached safe limit.', inviterId);
+    return;
+  }
+
+  inviterAccount.coins += INVITE_REWARD;
+  db.settings.inviteRewards[member.id] = {
+    inviterId,
+    joinedAt: Date.now(),
+    inviteCode: usedInvite.code,
+    reward: INVITE_REWARD,
+  };
+  await save();
+
+  const logChannel = await client.channels.fetch(INVITE_LOG_CHANNEL_ID).catch(() => null);
+  if (logChannel && logChannel.isTextBased()) {
+    await logChannel.send(
+      '<@' + member.id + '> تم اضافتك من قبل <@' + inviterId + '> وحصل على **' +
+      fmt(INVITE_REWARD) + '** عملة ✅'
+    ).catch(error => console.error('Could not send invite reward log:', error));
+  }
+}
+
 function amountOf(input) {
   if (!input) return null;
   const m = String(input).trim().toLowerCase().replace(/,/g, '').match(/^(\d+(?:\.\d+)?)\s*(k|m|b)?$/);
@@ -2616,9 +2686,10 @@ async function withdrawalButton(i, parts) {
   }
 }
 
-client.on('guildMemberAdd', member => {
+client.on('guildMemberAdd', async member => {
   recordMember(member);
-  save().catch(error => console.error('Could not save new member:', error));
+  await save().catch(error => console.error('Could not save new member:', error));
+  await processInviteJoin(member).catch(error => console.error('Invite reward processing failed:', error));
 });
 client.on('guildMemberRemove', member => {
   const data = account(member.id);
@@ -2676,6 +2747,16 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (cmd === 'setoninvite') {
+      if (!CFG.owners.includes(message.author.id)) return message.reply('هذا الأمر مخصص للأونرات فقط.');
+      db.settings = db.settings || {};
+      db.settings.invitesEnabled = !db.settings.invitesEnabled;
+      if (db.settings.invitesEnabled) await refreshInviteSnapshot(message.guild);
+      await save();
+      return message.reply(db.settings.invitesEnabled
+        ? '✅ تم تشغيل نظام الانفايت. كل عضو جديد عبر دعوتك يمنحك **30,000,000** عملة.'
+        : '⛔ تم إيقاف نظام الانفايت.');
+    }
     if (await handleGoldenUtilities(message, { isAdmin: admin })) return;
     if (await handleGoldenExtras(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '', suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID || '' })) return;
     if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '' })) return;
@@ -3167,6 +3248,9 @@ client.once('ready', async () => {
   await updateLiveBetsBoard().catch(error => console.error('Live Bets board setup failed:', error));
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
   if (guild) {
+    if (db.settings && db.settings.invitesEnabled === true) {
+      await refreshInviteSnapshot(guild);
+    }
     const members = await guild.members.fetch().catch(error => {
       console.error('Could not fetch server members; check Server Members Intent:', error);
       return null;
