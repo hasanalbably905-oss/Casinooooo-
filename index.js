@@ -972,7 +972,7 @@ function gameRows(g) {
   if (g.status === 'pending') return [new ActionRowBuilder().addComponents(
     btn('g:dice:' + g.id, 'النرد 🎲', ButtonStyle.Primary),
     btn('g:close:' + g.id, 'الرقم التقريبي 📊', ButtonStyle.Primary),
-    btn('g:xo:' + g.id, 'أكس أو ❌', ButtonStyle.Primary),
+    btn('g:selectxo:' + g.id, 'أكس أو ❌', ButtonStyle.Primary),
     btn('g:rps:' + g.id, 'حجرة ورقة مقص ✂️', ButtonStyle.Primary),
     btn('g:cancel:' + g.id, 'إلغاء', ButtonStyle.Danger),
   )];
@@ -1128,7 +1128,7 @@ async function gameButton(i, parts) {
   const g = db.games[id];
   if (!g) return ephemeral(i, 'هذا التحدي غير موجود أو انتهى.');
   const uid = i.user.id;
-  if (action === 'cancel' || ['dice', 'close', 'xo', 'rps'].includes(action)) {
+  if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps'].includes(action)) {
     if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
     if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
     if (action === 'cancel') {
@@ -1140,7 +1140,7 @@ async function gameButton(i, parts) {
         components: [],
       });
     }
-    g.mode = action;
+    g.mode = action === 'selectxo' ? 'xo' : action;
     g.status = 'awaiting_accept';
     g.expires = Date.now() + CFG.inviteMs;
     const descriptions = {
@@ -1149,7 +1149,7 @@ async function gameButton(i, parts) {
       xo: { name: '❌ أكس أو:', value: '> أكمل ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.' },
       rps: { name: '✂️ حجرة ورقة مقص:', value: '> يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.' },
     };
-    const details = descriptions[action];
+    const details = descriptions[g.mode];
     const waiting = new EmbedBuilder()
       .setColor(0x000000)
       .setDescription('> تنبيه: في حال عدم استجابة الطرفين و عدم اكمال التحدي يؤدي الى خصم نصف المبلغ من الطرفين.\n> عند التعادل لا يتم سحب اي مبلغ من الطرفين.')
@@ -1196,7 +1196,7 @@ async function gameButton(i, parts) {
     await save();
     await i.deferReply({ ephemeral: true });
     await i.editReply({
-      content: '> لقد تم القبول اللعبة هي : `' + (g.mode === 'dice' ? 'نرد' : 'الرقم التقريبي') + '` ، اللعب مع : <@' + g.p1 + '> !!',
+      content: '> تم قبول التحدي: ' + (g.mode === 'dice' ? 'النرد' : g.mode === 'close' ? 'الرقم التقريبي' : g.mode === 'xo' ? 'أكس أو' : 'حجرة ورقة مقص') + ' مع <@' + g.p1 + '>.',
     });
     // Legacy behavior: confirm privately, then publish the first turn after 2.5 seconds.
     setTimeout(() => {
