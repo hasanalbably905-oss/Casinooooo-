@@ -16,4 +16,5 @@ jobs:
       - run: node --check index.js
       - run: node --check golden-catalog.js
       - run: node --check golden-json-db.js
+      - run: node --check golden-models.js
       - run: node --test test/golden-json-db.test.js
