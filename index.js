@@ -3026,7 +3026,7 @@ async function ensureRulesEmbed() {
 }
 
 async function ensureRedeemInfoEmbed() {
-  const channelId = '1575333191361765386';
+  const channelId = '1575333471449260032';
   const channel = await client.channels.fetch(channelId).catch(error => {
     console.error('Could not fetch redeem info channel:', error);
     return null;
