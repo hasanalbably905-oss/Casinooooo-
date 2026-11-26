@@ -323,7 +323,7 @@ function amountOf(input) {
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
 const admin = id => CFG.owners.includes(String(id)) || CFG.admins.includes(String(id));
 function active(id, excludeId) {
-  return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
+  return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'selecting_subtype', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
 }
 const makeEmbed = (title, description) => new EmbedBuilder().setColor(0x30343b).setTitle(title).setDescription(description || '').setFooter({ text: 'Batoot Casino' }).setTimestamp();
 const greenEmbed = (title, description) => new EmbedBuilder()
@@ -2178,8 +2178,9 @@ function legacyCloseEmbed(g) {
     const nums = (g.closeNumbers && g.closeNumbers[id]) || [];
     const total = (g.closeSums && g.closeSums[id]) || 0;
     const done = g.closeDone && g.closeDone[id];
-    const status = done ? 'Done' : g.closeTurn === id ? '**Playing..**' : 'Waiting..';
-    const expression = nums.length ? nums.join(' + ') + ' = **' + total + '**' : status;
+    const status = done ? 'Done' : g.closeTurn === id ? '**Playing...**' : 'Waiting...';
+    const remaining = g.approxMode === 'descending' ? Number((g.closeRemaining || {})[id] || 0) : Math.max(0, Number(g.closeMax || 0) - Number(total || 0));
+    const expression = nums.length ? nums.join(' + ') + ' = **' + (g.approxMode === 'descending' ? Number(g.closeMax || 0) - remaining : total) + '**\\n0 (متبقي **' + remaining + '** )' : status + '\\n0 (متبقي **' + remaining + '** )';
     return { name: legacyPlayerTag(id), value: '> ' + expression };
   });
   return new EmbedBuilder()
@@ -2427,10 +2428,12 @@ async function finishApproximateTurn(g, reason) {
   const aDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p1] : a) - (g.approxMode === 'descending' ? 0 : g.closeMax));
   const bDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p2] : b) - (g.approxMode === 'descending' ? 0 : g.closeMax));
   const winner = aDiff === bDiff ? null : (g.approxMode === 'far' ? (aDiff > bDiff ? g.p1 : g.p2) : (aDiff < bDiff ? g.p1 : g.p2));
-  const result = 'الرقم المستهدف: **' + g.closeMax + '**\n' +
-    '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '** (الفرق: **' + aDiff + '** )\n' +
-    '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '** (الفرق: **' + bDiff + '** )\n' +
-    (winner ? 'الفائز هو الأقرب إلى الرقم المستهدف، سواء كان مجموعه أعلى أو أقل.' : 'تعادل! اللاعبان على نفس البعد من الرقم المستهدف.') +
+  const typeLabel = g.approxMode === 'descending' ? 'الحد التنازلي' : g.approxMode === 'far' ? 'الحد الأبعد' : g.approxMode === 'limit' && g.closeVisibility === 'show' ? 'الحد التقريبي (اظهار ارقام) 🔢' : 'الحد التقريبي الطبيعي 🏁';
+  const result = '** نتيجة اللعبة :**\\n\\n' +
+    (winner ? 'الـ ** فـآئز ** : <@' + winner + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? a : b) + '`\\n\\nالـ ** خـآسر ** : <@' + (winner === g.p1 ? g.p2 : g.p1) + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? b : a) + '`' : 'الـ ** تعادل ** : <@' + g.p1 + '> & <@' + g.p2 + '>') +
+    '\\n\\nالـ ** لعبة ** : الـ`' + typeLabel + '` .! `-` الـ **💰 - مبلغ** : `' + fmt(g.bet) + '` .!\\n' +
+    'الرقم المطلوب: **' + g.closeMax + '** • الفروق: ' + aDiff + ' / ' + bDiff + '\\n' +
+    (winner ? (g.approxMode === 'far' ? 'الفائز هو الأبعد عن الهدف.' : 'الفائز هو الأقرب إلى الهدف.') : 'تعادل! لا يتم سحب أي مبلغ من الطرفين.') +
     (reason ? '\n' + reason : '');
   await settle(g, winner, result);
 }
@@ -2511,7 +2514,7 @@ async function gameButton(i, parts) {
       g.status = 'declined';
       await save();
       return i.update({
-        content: 'تم إلغاء التحدي بنجاح' + i.user.toString() + ' !\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||',
+        content: 'تم إلغاء التحدي بنجاح\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||',
         embeds: [],
         components: [],
       });
@@ -2545,14 +2548,12 @@ async function gameButton(i, parts) {
     });
     // Legacy behavior: confirm privately, then publish the first turn after 2.5 seconds.
     setTimeout(() => {
-      editGame(
-        g,
-        'بدأ التحدي',
-        g.mode === 'rps'
-          ? 'يختار كل لاعب الآن حجرة أو ورقة أو مقص.'
-          : '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\n اصبح دورك',
-        gameRows(g),
-      ).catch(err => console.error('Could not start accepted game:', err));
+      if (g.mode === 'close' && g.status === 'selecting') {
+        editGame(g, 'إختيار نوعية التحدي', 'اختر نوعية التحدي المناسبة.', gameRows(g)).catch(err => console.error('Could not show approximate modes:', err));
+        return;
+      }
+      editGame(g, 'بدأ التحدي', g.mode === 'rps' ? 'هنهزر يسطا ؟ مش عارف حجره ورقه مقص ؟' : '<@' + g.turn + '>\n اصبح دورك', gameRows(g))
+        .catch(err => console.error('Could not start accepted game:', err));
     }, 2500);
     return;
   }
