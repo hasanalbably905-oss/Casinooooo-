@@ -16,7 +16,7 @@ const { handleGoldenExtras } = require('./golden-extras');
 const { rpsWinner, xoWinner, xoIsDraw } = require('./golden-game-rules');
 
 const CFG = {
-  owners: (process.env.OWNER_IDS || '1483368871032520704,1244772188662403176,1071915968521056377').split(',').map(x => x.trim()).filter(Boolean),
+  owners: (process.env.OWNER_IDS || '1483368871032520704,1244772188662403176').split(',').map(x => x.trim()).filter(Boolean),
   owner: process.env.OWNER_ID || '1483368871032520704',
   creditRecipient: process.env.CREDIT_RECIPIENT_ID || '1483368871032520704',
   guild: process.env.GUILD_ID || '1501507950492127234',
