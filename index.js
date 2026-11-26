@@ -1190,10 +1190,8 @@ async function startBotChallenge(message, amount) {
       { label: 'البحث عن الكرة', value: 'find_ball', description: 'حاول العثور على الكرة داخل أحد الأكواب', emoji: '🥎' },
       { label: 'لعبة النرد', value: 'dice', description: 'رمي النرد ومحاولة تحقيق الفوز', emoji: '🎲' },
       { label: 'عجلة الحظ', value: 'wheel', description: 'اختر لونًا ودع العجلة تحدد مصيرك!', emoji: '🎡' },
-      { label: 'اكس او', value: 'tictactoe', description: 'xo', emoji: '❎' },
       { label: 'بلاك جاك', value: 'blackjack', description: 'العب بلاك جاك ضد البوت', emoji: '🃏' },
       { label: 'قلب العملة', value: 'coinflip', description: 'العب كوين فليب ضد البوت', emoji: '🪙' },
-      { label: 'الأبراج 🗼', value: 'towers', description: 'تسلق البرج واختر الأزرار الصحيحة', emoji: '🗼' },
       { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'قم بإلغاء التحدي الحالي.', emoji: '🚫' },
     );  const sent = await message.reply({
     content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
