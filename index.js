@@ -7,7 +7,7 @@ const https = require('node:https');
 const { Probot } = require('discord-probot-transfer');
 const {
   Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder,
-  ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
+  ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder,
 } = require('discord.js');
 const { handleGoldenCatalog } = require('./golden-catalog');
 const { handleGoldenSocial } = require('./golden-social');
@@ -172,8 +172,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, wheel: old.wheel || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, wheel: {}, settings: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, wheel: old.wheel || {}, botChallenges: old.botChallenges || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, wheel: {}, botChallenges: {}, settings: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -1163,6 +1163,81 @@ async function wheelButton(i) {
   return finishWheel(game, color === landed ? 'win' : 'loss', landed);
 }
 
+
+async function startBotChallenge(message, amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) return message.reply('الاستخدام: `تحدي بوت 100k`');
+  const wallet = account(message.author.id);
+  if (wallet.coins < amount) return message.reply('رصيدك غير كافٍ لبدء هذا التحدي.');
+  if (active(message.author.id) ||
+      Object.values(db.blackjack || {}).some(g => g && g.userId === message.author.id && g.status === 'playing') ||
+      Object.values(db.wheel || {}).some(g => g && g.userId === message.author.id && g.status === 'playing') ||
+      Object.values(db.botChallenges || {}).some(g => g && g.userId === message.author.id && g.status === 'choosing')) {
+    return message.reply('لديك تحدٍ أو لعبة نشطة بالفعل؛ أنهها أولاً.');
+  }
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 14);
+  const challenge = db.botChallenges[id] = {
+    id, userId: message.author.id, channelId: message.channel.id,
+    stake: amount, status: 'choosing', createdAt: Date.now(),
+    expiresAt: Date.now() + 30000,
+  };
+  await save();
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('bot-challenge:' + id)
+    .setPlaceholder('🎮 اختر اللعبة التي تريد تحدي البوت بها')
+    .setMinValues(1).setMaxValues(1)
+    .addOptions(
+      { label: 'بلاك جاك ضد البوت', value: 'blackjack', description: 'العب أوراقك ضد الموزّع', emoji: '🃏' },
+      { label: 'عجلة الحظ ضد البوت', value: 'wheel', description: 'اختر لوناً واختبر حظك', emoji: '🎡' },
+    );
+  const sent = await message.reply({
+    embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🤖 تحدي البوت')
+      .setDescription('**الرهان:** ' + fmt(amount) + ' كوين\n\nاختر لعبة من القائمة لبدء التحدي ضد البوت.')
+      .setFooter({ text: 'Golden Casino • Bot Challenge' }).setTimestamp()],
+    components: [new ActionRowBuilder().addComponents(menu)],
+  }).catch(() => null);
+  if (!sent) {
+    challenge.status = 'cancelled';
+    await save();
+    return;
+  }
+  challenge.messageId = sent.id;
+  await save();
+}
+async function botChallengeSelect(i) {
+  const id = i.customId.split(':')[1];
+  const challenge = db.botChallenges[id];
+  if (!challenge || challenge.status !== 'choosing') return ephemeral(i, 'هذا التحدي انتهى أو لم يعد متاحاً.');
+  if (i.user.id !== challenge.userId) return ephemeral(i, 'هذه القائمة مخصصة لصاحب التحدي فقط.');
+  if (Date.now() >= challenge.expiresAt) {
+    challenge.status = 'expired';
+    await save();
+    return i.update({ content: '⌛ انتهت مهلة اختيار اللعبة. ابدأ تحدياً جديداً.', embeds: [], components: [] });
+  }
+  const selected = i.values[0];
+  if (!['blackjack', 'wheel'].includes(selected)) return ephemeral(i, 'اللعبة المختارة غير متاحة حالياً.');
+  const wallet = account(challenge.userId);
+  if (wallet.coins < challenge.stake) {
+    challenge.status = 'cancelled';
+    await save();
+    return i.update({ content: 'رصيدك لم يعد كافياً لبدء اللعبة.', embeds: [], components: [] });
+  }
+  challenge.status = 'started';
+  challenge.selectedGame = selected;
+  challenge.startedAt = Date.now();
+  await save();
+  await i.update({
+    content: '✅ تم اختيار **' + (selected === 'blackjack' ? 'بلاك جاك' : 'عجلة الحظ') + '**. بدأ تحديك ضد البوت بالأسفل.',
+    embeds: [], components: [],
+  });
+  const fakeMessage = {
+    author: i.user,
+    channel: i.channel,
+    reply: payload => i.message.reply(payload),
+  };
+  if (selected === 'blackjack') return startBlackjack(fakeMessage, challenge.stake);
+  return startWheel(fakeMessage, challenge.stake);
+}
+
 async function startBlackjack(message, amount) {
   if (!Number.isSafeInteger(amount) || amount <= 0) return message.reply('الاستخدام: بلاك جاك 100k');
   const wallet = account(message.author.id);
@@ -1348,6 +1423,7 @@ async function challenge(message, args) {
   const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
   if (!challengeChannel || !challengeChannel.isTextBased()) return message.reply('روم عرض التحديات غير متاح حالياً.');
   const preference = String(args[1] || '').toLowerCase();
+  if (['بوت', 'bot'].includes(preference)) return startBotChallenge(message, amountOf(args[2]));
   if (['عام', 'فرندز'].includes(preference)) {
     const data = account(message.author.id);
     data.challenge = preference === 'عام' ? 'general' : 'friends';
@@ -2190,6 +2266,9 @@ client.on('interactionCreate', async i => {
     if (i.isModalSubmit() && i.customId === 'w:modal') {
       await i.deferReply({ ephemeral: true });
       return withLock('withdrawal-modal:' + i.user.id, () => withdrawalModal(i));
+    }
+    if (i.isStringSelectMenu() && i.customId.startsWith('bot-challenge:')) {
+      return withLock('bot-challenge:' + i.customId.split(':')[1], () => botChallengeSelect(i));
     }
     if (!i.isButton()) return;
     if (i.customId === 'cash:withdraw') {
