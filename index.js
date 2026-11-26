@@ -862,15 +862,37 @@ async function balance(message, user) {
   data.lastSeenAt = Date.now();
   await save();
 
-  // Keep the original balance command appearance and reply behavior.
-  const shownBalance = data.hideBalance === true ? 0 : data.coins;
+  // Golden-style wallet panel: main wallet plus every linked wallet (maximum five).
+  const ownBalance = data.hideBalance === true ? 0 : data.coins;
   const embed = new EmbedBuilder()
-    .setColor('Gold')
+    .setColor('#FFD700')
     .setThumbnail(user.displayAvatarURL({ forceStatic: false }))
-    .setTitle('الرصيد الحالي لـ ' + user.username)
-    .setDescription('**' + fmt(shownBalance) + ' كوين**')
-    .setFooter({ text: message.guild.name })
-    .setTimestamp();
+    .setTitle('الرصيد الحالي لـ ' + (user.username || data.username))
+    .addFields({
+      name: '💰 ' + (user.username || data.username),
+      value: '**' + fmt(ownBalance) + ' كوين**',
+      inline: false,
+    });
+
+  const partners = linkedPartners(user.id).slice(0, 5);
+  for (let index = 0; index < partners.length; index++) {
+    const partnerId = partners[index];
+    const partnerUser = await client.users.fetch(partnerId).catch(() => null);
+    const partnerData = account(partnerId);
+    const partnerName = partnerUser?.username || partnerData.username || partnerId;
+    const partnerBalance = partnerData.hideBalance === true ? 0 : partnerData.coins;
+    embed.addFields({
+      name: '💳 ' + partnerName + ' (' + (index + 1) + '/' + partners.length + ')',
+      value: '**' + fmt(partnerBalance) + ' كوين**',
+      inline: false,
+    });
+  }
+
+  embed.setFooter({
+    text: partners.length
+      ? '# Golden Casino | المحافظ المرتبطة'
+      : (message.guild.name + ' • Golden Casino'),
+  }).setTimestamp();
 
   return message.reply({ embeds: [embed] });
 }
