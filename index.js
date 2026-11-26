@@ -96,6 +96,9 @@ async function loadGitHubData() {
     db.processedTransfers = parsed.processedTransfers || {};
     db.creditReviews = parsed.creditReviews || {};
     db.transfers = parsed.transfers || {};
+    db.linkRequests = parsed.linkRequests || {};
+    db.linkedAccounts = parsed.linkedAccounts || {};
+    db.linkedWithdrawals = parsed.linkedWithdrawals || {};
     db.adminLogs = parsed.adminLogs || [];
     githubFileSha = remote.sha;
     await fs.promises.writeFile(FILE, JSON.stringify(db, null, 2), 'utf8');
