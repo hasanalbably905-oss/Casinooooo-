@@ -609,7 +609,7 @@ async function requestAccountLink(message, args) {
   await save();
   const embed = greenEmbed('🔗 طلب ربط الحسابات',
     '━━━━━━━━━━━━━━━━━━━━\nتم إرسال طلب لربط المحفظتين بين الطرفين.\n━━━━━━━━━━━━━━━━━━━━')
-    .setAuthor({ name: 'GOLDEN CASINO • ACCOUNT LINK', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+    .setAuthor({ name: 'BAToot CASINO • ACCOUNT LINK', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
     .addFields(
       { name: '👤 صاحب الطلب', value: message.author.toString(), inline: true },
       { name: '🤝 الطرف الثاني', value: target.toString(), inline: true },
@@ -644,7 +644,7 @@ async function requestLinkedWithdrawal(message, args) {
   await save();
   const embed = greenEmbed('💸 طلب سحب من المحفظة المرتبطة',
     '━━━━━━━━━━━━━━━━━━━━\nطلب تحويل رصيد بين المحفظتين المرتبطتين.\n━━━━━━━━━━━━━━━━━━━━')
-    .setAuthor({ name: 'GOLDEN CASINO • WALLET TRANSFER', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+    .setAuthor({ name: 'BAToot CASINO • WALLET TRANSFER', iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
     .addFields(
       { name: '📤 سيتم الخصم من', value: '<@' + partnerId + '>', inline: true },
       { name: '📥 المستفيد', value: message.author.toString(), inline: true },
@@ -866,7 +866,7 @@ async function balance(message, user) {
   data.lastSeenAt = Date.now();
   await save();
 
-  // Golden-style wallet panel: main wallet plus every linked wallet (maximum five).
+  // Batoot-style wallet panel: main wallet plus every linked wallet (maximum five).
   const ownBalance = data.hideBalance === true ? 0 : data.coins;
   const embed = new EmbedBuilder()
     .setColor('#FFD700')
@@ -894,8 +894,8 @@ async function balance(message, user) {
 
   embed.setFooter({
     text: partners.length
-      ? '# Golden Casino | المحافظ المرتبطة'
-      : (message.guild.name + ' • Golden Casino'),
+      ? '# Batoot Casino | المحافظ المرتبطة'
+      : (message.guild.name + ' • Batoot Casino'),
   }).setTimestamp();
 
   return message.reply({ embeds: [embed] });
@@ -954,7 +954,7 @@ async function refreshTournamentBoard(tournament) {
     : 'لا يوجد مشاركون حتى الآن.';
   const embed = new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 ترتيب البطولة')
     .setDescription(description)
-    .setFooter({ text: 'Golden Casino • البطولة' }).setTimestamp();
+    .setFooter({ text: 'Batoot Casino • البطولة' }).setTimestamp();
   if (tournament.messageId) {
     const oldMessage = await channel.messages.fetch(tournament.messageId).catch(() => null);
     if (oldMessage) { await oldMessage.edit({ embeds: [embed] }).catch(() => {}); return; }
@@ -1037,7 +1037,7 @@ function blackjackEmbed(game, revealDealer = false, headline = '🃏 بلاك ج
       '\nالمجموع: **' + blackjackScore(game.player) + '**\n\n' +
       '**الموزّع**\n' + dealerHand + dealerScore +
       '\n\nالرهان الحالي: **' + fmt(game.stake) + '** كوين'
-    ).setFooter({ text: 'Golden Casino • Blackjack' }).setTimestamp();
+    ).setFooter({ text: 'Batoot Casino • Blackjack' }).setTimestamp();
 }
 function blackjackRow(game) {
   if (game.status !== 'playing') return [];
@@ -1089,7 +1089,7 @@ function wheelEmbed(game, finished = false, result = null) {
   return new EmbedBuilder().setColor(finished ? (game.outcome === 'win' ? 0x2ecc71 : 0xe74c3c) : 0xf1c40f)
     .setTitle(finished ? '🎡 نتيجة عجلة الحظ' : '🎡 عجلة الحظ • اختر لونك')
     .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Golden Casino • Wheel' }).setTimestamp();
+    .setFooter({ text: 'Batoot Casino • Wheel' }).setTimestamp();
 }
 function wheelRow(game) {
   if (game.status !== 'playing') return [];
@@ -1283,7 +1283,7 @@ async function startBotMiniGame(message, challenge, mode) {
   const sent = await message.reply({
     embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle(titles[mode])
       .setDescription('**الرهان:** ' + fmt(challenge.stake) + ' كوين\\n' + descriptions[mode])
-      .setFooter({ text: 'Golden Casino • Bot Challenge' }).setTimestamp()],
+      .setFooter({ text: 'Batoot Casino • Bot Challenge' }).setTimestamp()],
     components: rows,
   });
   challenge.gameMessageId = sent.id;
@@ -1341,7 +1341,7 @@ async function botMiniGameButton(i) {
   return i.update({
     embeds: [new EmbedBuilder().setColor(outcome === 'win' ? 0x2ecc71 : outcome === 'draw' || outcome === 'refunded' ? 0xf1c40f : 0xe74c3c)
       .setTitle('🎮 نتيجة التحدي ضد البوت').setDescription(detail + '\\n\\n' + result)
-      .setFooter({ text: 'Golden Casino • Bot Challenge' }).setTimestamp()],
+      .setFooter({ text: 'Batoot Casino • Bot Challenge' }).setTimestamp()],
     components: [],
   });
 }
@@ -1413,7 +1413,7 @@ function activePrivateRooms() {
 function privateRoomPanelEmbed() {
   const price = privateRoomPrice();
   const available = Math.max(0, 10 - activePrivateRooms().length);
-  return new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 | Golden Casino • الرومات الخاصة')
+  return new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 | Batoot Casino • الرومات الخاصة')
     .setDescription(
       '> احجز روم خاصة لك ولأصدقائك داخل السيرفر.\n' +
       '> يمكنك إضافة حتى **10 أعضاء** إلى رومك.\n' +
@@ -1421,7 +1421,7 @@ function privateRoomPanelEmbed() {
       '> سعر الحجز: **' + fmt(price) + ' كوين**.\n' +
       '> الرومات المتاحة حالياً: **' + available + '/10**.\n\n' +
       '**داخل رومك:** استخدم `add @عضو` و `rem @عضو` لإدارة الأعضاء، و`رومي` لمعرفة وقت الانتهاء.'
-    ).setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp();
+    ).setFooter({ text: 'Batoot Casino • Private Rooms' }).setTimestamp();
 }
 async function ensurePrivateRoomPanel() {
   const panelChannelId = db.settings.privateRoomPanelChannelId || CFG.rentalRoom;
@@ -1496,7 +1496,7 @@ async function buyPrivateRoom(i) {
       { name: '> تبقي من مدة الروم :', value: '12 ساعة', inline: false },
       { name: '> سعر الحجز :', value: fmt(price) + ' كوين', inline: false },
     )
-    .setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp()] }).catch(error => {
+    .setFooter({ text: 'Batoot Casino • Private Rooms' }).setTimestamp()] }).catch(error => {
       console.error('Private room announcement failed:', error);
       return null;
     });
@@ -1685,7 +1685,7 @@ async function challenge(message, args) {
       { name: '✂️ - **حجرة ورقة مقص**', value: '> **يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.**' },
     )
     .setFooter({
-      text: 'Golden Casino | اختر بحكمة واستمتع!',
+      text: 'Batoot Casino | اختر بحكمة واستمتع!',
       iconURL: client.user.displayAvatarURL(),
     });
   const sent = await message.reply({
@@ -1975,7 +1975,7 @@ async function gameButton(i, parts) {
         '> المبلغ الذي قمت بتحديده: `' + fmt(g.bet) + '`'
       )
       .addFields({ name: details.name, value: details.value }, { name: 'المبلغ:', value: fmt(g.bet) })
-      .setFooter({ text: 'Golden Casino | بانتظار موافقة اللاعب' });
+      .setFooter({ text: 'Batoot Casino | بانتظار موافقة اللاعب' });
     await save();
     await i.deferReply({ ephemeral: true });
     await i.message.edit({
@@ -2498,7 +2498,7 @@ client.on('messageCreate', async message => {
       db.tournaments[tournament.id] = tournament;
       const channel = await client.channels.fetch(CFG.tournamentRoom).catch(() => null);
       if (!channel || !channel.isTextBased()) { delete db.tournaments[tournament.id]; return message.reply('روم البطولة غير متاح. تحقق من TOURNAMENT_ROOM_ID.'); }
-      const embed = new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 بطولة Golden Casino')
+      const embed = new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 بطولة Batoot Casino')
         .setDescription('**المدة:** ' + days + ' يوم\n**المركز الأول:** ' + fmt(first) + '\n**المركز الثاني:** ' + fmt(second) +
           '\n**المركز الثالث:** ' + fmt(third) + '\n**المراكز 4-10:** ' + fmt(top10) + ' لكل مركز\n\nتنتهي <t:' + Math.floor(tournament.endsAt / 1000) + ':R>.')
         .setFooter({ text: 'يتم احتساب نقاط البطولة من رهانات التحديات المقبولة.' }).setTimestamp();
