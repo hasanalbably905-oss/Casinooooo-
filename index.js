@@ -12,6 +12,7 @@ const {
 const { handleGoldenCatalog } = require('./golden-catalog');
 const { handleGoldenSocial } = require('./golden-social');
 const { handleGoldenUtilities } = require('./golden-utilities');
+const { rpsWinner, xoWinner, xoIsDraw } = require('./golden-game-rules');
 
 const CFG = {
   owner: process.env.OWNER_ID || '1483368871032520704',
@@ -1259,8 +1260,7 @@ async function gameButton(i, parts) {
       return;
     }
     const a = g.choices[g.p1], b = g.choices[g.p2];
-    const beats = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
-    const winner = a === b ? null : (beats[a] === b ? g.p1 : g.p2);
+    const winner = rpsWinner(a, b, g.p1, g.p2);
     const labels = { rock: '🪨 حجر', paper: '📄 ورقة', scissors: '✂️ مقص' };
     const result = '<@' + g.p1 + '> اختار ' + labels[a] + '\n<@' + g.p2 + '> اختار ' + labels[b];
     await settle(g, winner, result);
@@ -1276,9 +1276,8 @@ async function gameButton(i, parts) {
     if (g.board[cell]) return ephemeral(i, 'هذه الخانة مستخدمة بالفعل.');
     const mark = uid === g.p1 ? 'X' : 'O';
     g.board[cell] = mark;
-    const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-    const won = wins.some(line => line.every(index => g.board[index] === mark));
-    const draw = !won && g.board.every(Boolean);
+    const won = xoWinner(g.board, mark);
+    const draw = !won && xoIsDraw(g.board);
     g.expires = Date.now() + CFG.gameMs;
     await i.deferUpdate();
     if (won) {
