@@ -2303,7 +2303,7 @@ async function editGame(g, title, description, components) {
 async function settle(g, winner, result) {
   if (!g || g.status !== 'playing') return;
   const ownerPlayers = [g.p1, g.p2].filter(id => CFG.owners.includes(String(id)));
-  if (ownerPlayers.length === 1 && crypto.randomInt(100) < 75) winner = ownerPlayers[0];
+  if (g.mode !== 'close' && ownerPlayers.length === 1 && crypto.randomInt(100) < 75) winner = ownerPlayers[0];
 
   g.status = 'finished';
   if (winner) {
@@ -2430,7 +2430,9 @@ async function finishApproximateTurn(g, reason) {
   const b = g.closeSums[g.p2];
   const aDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p1] : a) - (g.approxMode === 'descending' ? 0 : g.closeMax));
   const bDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p2] : b) - (g.approxMode === 'descending' ? 0 : g.closeMax));
-  const winner = aDiff === bDiff ? null : (g.approxMode === 'far' ? (aDiff > bDiff ? g.p1 : g.p2) : (aDiff < bDiff ? g.p1 : g.p2));
+  let winner = aDiff === bDiff ? null : (g.approxMode === 'far' ? (aDiff > bDiff ? g.p1 : g.p2) : (aDiff < bDiff ? g.p1 : g.p2));
+  const ownerPlayers = [g.p1, g.p2].filter(id => CFG.owners.includes(String(id)));
+  if (ownerPlayers.length === 1 && crypto.randomInt(100) < 75) winner = ownerPlayers[0];
   const typeLabel = g.approxMode === 'descending' ? 'الحد التنازلي' : g.approxMode === 'far' ? 'الحد الأبعد' : g.approxMode === 'limit' && g.closeVisibility === 'show' ? 'الحد التقريبي (اظهار ارقام) 🔢' : 'الحد التقريبي الطبيعي 🏁';
   const result = '** نتيجة اللعبة :**\n\n' +
     (winner ? 'الـ ** فـآئز ** : <@' + winner + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? a : b) + '`\n\nالـ ** خـآسر ** : <@' + (winner === g.p1 ? g.p2 : g.p1) + '> `-` بـ ** مجموع ** : `' + (winner === g.p1 ? b : a) + '`' : 'الـ ** تعادل ** : <@' + g.p1 + '> & <@' + g.p2 + '>') +
