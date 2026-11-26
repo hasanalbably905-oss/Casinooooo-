@@ -937,6 +937,40 @@ async function workForCoins(message) {
     '📌 ' + jobs[crypto.randomInt(jobs.length)] + '\n\n💰 أجرك: **' + fmt(reward) + ' كوين**\n💳 رصيدك الحالي: **' + fmt(data.coins) + '**\n\nيمكنك العمل مرة أخرى بعد ساعة.'
   ).setColor(0x3498db)] });
 }
+async function showLegacyAccountInfo(message, user) {
+  try {
+    const data = account(user.id);
+    const partners = linkedPartners(user.id);
+    let linkedAccountsText = 'لا توجد حسابات مرتبطة';
+    if (partners.length) {
+      const partnerLines = [];
+      for (const pid of partners) {
+        const pData = account(pid);
+        let balanceText = Number(pData.coins || 0).toLocaleString('en-US');
+        partnerLines.push('<@' + pid + '> — **' + balanceText + '** كوين');
+      }
+      linkedAccountsText = partnerLines.join('\\n');
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x0099ff)
+      .setTitle('💼 معلومات الحساب الشخصي')
+      .setDescription('🔍 تفاصيل الحساب الخاص بـ ' + (user.tag || user.username))
+      .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: '💰 رصيدك الحالي', value: fmt(data.coins) + ' كوين', inline: true },
+        { name: '🏦 الحسابات البنكية المرتبطة (' + partners.length + '/5)', value: linkedAccountsText, inline: false },
+        { name: '🔒 اللاعبون المحظورون', value: Array.isArray(data.blocked) && data.blocked.length
+          ? data.blocked.map(id => '<@' + id + '>').join(', ')
+          : 'لا يوجد', inline: true }
+      )
+      .setFooter({ text: 'تم الطلب بواسطة ' + user.username, iconURL: user.displayAvatarURL({ dynamic: true }) })
+      .setTimestamp();
+    return message.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error('خطأ في أمر معلومات:', error);
+    return message.reply('⚠️ حدث خطأ أثناء جلب معلومات حسابك.');
+  }
+}
 async function showProfile(message, user) {
   const data = account(user.id);
   const sent = Object.values(db.transfers).filter(t => t && t.status === 'completed' && t.from === user.id).length;
@@ -2900,7 +2934,7 @@ client.on('messageCreate', async message => {
     if (['فلوس', 'money', 'رصيدي', 'balance'].includes(cmd)) return balance(message, message.mentions.users.first() || message.author);
     if (['يومي', 'دايلي', 'daily'].includes(cmd)) return withLock('daily:' + message.author.id, () => claimDaily(message));
     if (['عمل', 'work'].includes(cmd)) return withLock('work:' + message.author.id, () => workForCoins(message));
-    if (['ملفي', 'profile', 'بروفايل'].includes(cmd)) return showProfile(message, message.mentions.users.first() || message.author);
+    if (['ملف', 'معلومات', 'ملفي', 'profile', 'بروفايل'].includes(cmd)) return showLegacyAccountInfo(message, message.mentions.users.first() || message.author);
     if (['تحويلاتي', 'history'].includes(cmd)) return showTransferHistory(message, message.author);
     if (['سجل-اداري', 'adminlog'].includes(cmd)) return showAdminLog(message);
     if (['توب', 'top'].includes(cmd)) {
