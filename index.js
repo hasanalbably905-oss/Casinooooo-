@@ -822,7 +822,7 @@ async function gameButton(i, parts) {
       editGame(
         g,
         'بدأ التحدي',
-        '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\\n اصبح دورك',
+        '<@' + (g.mode === 'close' ? g.closeTurn : g.turn) + '>\n اصبح دورك',
         gameRows(g),
       ).catch(err => console.error('Could not start accepted game:', err));
     }, 2500);
@@ -879,13 +879,13 @@ async function gameButton(i, parts) {
       g.expires = Date.now() + CFG.gameMs;
       await save();
       await i.deferUpdate();
-      await editGame(g, 'لعبة النرد — 3 رميات', '<@' + nextPlayer + '>\\n اصبح دورك', gameRows(g));
+      await editGame(g, 'لعبة النرد — 3 رميات', '<@' + nextPlayer + '>\n اصبح دورك', gameRows(g));
       return;
     }
     const a = diceTotal(g, g.p1), b = diceTotal(g, g.p2);
     const winner = a === b ? null : (a > b ? g.p1 : g.p2);
     const result =
-      '<@' + g.p1 + '> رمياته: **' + diceRollList(g, g.p1).join(' + ') + ' = ' + a + '**\\n' +
+      '<@' + g.p1 + '> رمياته: **' + diceRollList(g, g.p1).join(' + ') + ' = ' + a + '**\n' +
       '<@' + g.p2 + '> رمياته: **' + diceRollList(g, g.p2).join(' + ') + ' = ' + b + '**';
     await i.deferUpdate();
     await settle(g, winner, result);
