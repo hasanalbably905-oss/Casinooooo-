@@ -23,6 +23,9 @@ const CFG = {
   gameRooms: (process.env.GAME_CHANNEL_IDS || '1575119362363490455,1575119427349913630,1575119396232232990').split(',').map(x => x.trim()).filter(Boolean),
   rentalRoom: process.env.RENTAL_ROOM_ID || '1575329123830730845',
   tournamentRoom: process.env.TOURNAMENT_ROOM_ID || '1575330966472360016',
+  rentalRoom: process.env.RENTAL_ROOM_ID || '1575329123830730845',
+  rentPrice: Number(process.env.PRIVATE_ROOM_PRICE || 999999),
+  rentDurationMs: 12 * 60 * 60 * 1000,
   challengeRoom: process.env.CHALLENGE_ROOM_ID || '1575332710283747519',
   withdrawRoom: process.env.WITHDRAW_PANEL_CHANNEL_ID || '1575119654534381699',
   requestsRoom: process.env.WITHDRAW_REQUESTS_CHANNEL_ID || '1575119873875517540',
@@ -168,8 +171,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, settings: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -1000,6 +1003,129 @@ async function finishTournament(tournament, cancelled = false) {
       .setDescription(result).setTimestamp()] }).catch(() => {});
   }
 }
+function privateRoomPrice() {
+  const value = Number(db.settings.privateRoomPrice ?? CFG.rentPrice);
+  return Number.isSafeInteger(value) && value > 0 ? value : CFG.rentPrice;
+}
+function activePrivateRooms() {
+  return Object.values(db.privateRooms || {}).filter(room => room && room.status === 'active');
+}
+function privateRoomPanelEmbed() {
+  const price = privateRoomPrice();
+  const available = Math.max(0, 5 - activePrivateRooms().length);
+  return new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 | Golden Casino • الرومات الخاصة')
+    .setDescription(
+      '> احجز روم خاصة لك ولأصدقائك داخل السيرفر.\n' +
+      '> يمكنك إضافة حتى **5 أعضاء** إلى رومك.\n' +
+      '> مدة الحجز: **12 ساعة**.\n' +
+      '> سعر الحجز: **' + fmt(price) + ' كوين**.\n' +
+      '> الرومات المتاحة حالياً: **' + available + '/5**.\n\n' +
+      '**داخل رومك:** استخدم `add @عضو` و `rem @عضو` لإدارة الأعضاء، و`رومي` لمعرفة وقت الانتهاء.'
+    ).setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp();
+}
+async function ensurePrivateRoomPanel() {
+  const channel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
+  if (!channel || !channel.isTextBased()) {
+    console.warn('Private room panel channel unavailable:', CFG.rentalRoom);
+    return;
+  }
+  const row = new ActionRowBuilder().addComponents(btn('r:buy', '🎟️ احجز روم خاصة', ButtonStyle.Success));
+  const panelId = db.settings.privateRoomPanelMessageId;
+  const oldMessage = panelId ? await channel.messages.fetch(panelId).catch(() => null) : null;
+  if (oldMessage) return oldMessage.edit({ embeds: [privateRoomPanelEmbed()], components: [row] });
+  const sent = await channel.send({ embeds: [privateRoomPanelEmbed()], components: [row] });
+  db.settings.privateRoomPanelMessageId = sent.id;
+  await save();
+}
+async function refreshPrivateRoomPanel() {
+  const channel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
+  if (!channel || !channel.isTextBased()) return;
+  const row = new ActionRowBuilder().addComponents(btn('r:buy', '🎟️ احجز روم خاصة', ButtonStyle.Success));
+  const id = db.settings.privateRoomPanelMessageId;
+  const msg = id ? await channel.messages.fetch(id).catch(() => null) : null;
+  if (msg) await msg.edit({ embeds: [privateRoomPanelEmbed()], components: [row] }).catch(() => {});
+  else await ensurePrivateRoomPanel();
+}
+async function buyPrivateRoom(i) {
+  if (activePrivateRooms().length >= 5) return ephemeral(i, 'عذراً، جميع الرومات الخاصة الخمس محجوزة حالياً.');
+  const existing = activePrivateRooms().find(room => room.owner === i.user.id);
+  if (existing) return ephemeral(i, 'لديك روم خاصة بالفعل: <#' + existing.channelId + '>.');
+  const price = privateRoomPrice();
+  const wallet = account(i.user.id);
+  if (wallet.coins < price) return ephemeral(i, 'رصيدك غير كافٍ. السعر: **' + fmt(price) + '** كوين.');
+  const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
+  const panel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
+  if (!guild || !panel || !panel.isTextBased()) return ephemeral(i, 'روم الحجوزات غير متاحة حالياً، تواصل مع الإدارة.');
+  const member = await guild.members.fetch(i.user.id).catch(() => null);
+  if (!member) return ephemeral(i, 'يجب أن تكون عضواً في السيرفر لحجز روم خاصة.');
+  const channel = await guild.channels.create({
+    name: '🎰｜' + member.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 70) + '-' + member.user.id.slice(-4),
+    type: 0,
+    ...(panel.parentId ? { parent: panel.parentId } : {}),
+    permissionOverwrites: [
+      { id: guild.id, deny: ['ViewChannel'] },
+      { id: member.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'AttachFiles', 'EmbedLinks'] },
+      { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels', 'ManageMessages'] },
+    ],
+  }).catch(error => { console.error('Private room create failed:', error); return null; });
+  if (!channel) return ephemeral(i, 'تعذر إنشاء الروم. لم يتم خصم أي مبلغ من رصيدك.');
+  wallet.coins -= price;
+  const room = {
+    channelId: channel.id, owner: i.user.id, status: 'active',
+    createdAt: Date.now(), expiresAt: Date.now() + CFG.rentDurationMs,
+    addedMembers: [], price,
+  };
+  db.privateRooms[channel.id] = room;
+  await channel.send({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 رومك الخاصة')
+    .setDescription('صاحب الروم: <@' + i.user.id + '>\nالمدة: **12 ساعة**\nالسعر المدفوع: **' + fmt(price) + '** كوين\nتنتهي: <t:' + Math.floor(room.expiresAt / 1000) + ':R>\n\nإضافة عضو: `add @عضو`\nإزالة عضو: `rem @عضو`\nعرض التفاصيل: `رومي`')
+    .setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp()] });
+  await save();
+  await refreshPrivateRoomPanel();
+  return ephemeral(i, '✅ تم حجز رومك الخاصة: <#' + channel.id + '>\nتم خصم **' + fmt(price) + '** كوين من محفظتك.');
+}
+async function expirePrivateRoom(room) {
+  if (!room || room.status !== 'active') return;
+  room.status = 'expired';
+  room.expiredAt = Date.now();
+  await save();
+  const channel = await client.channels.fetch(room.channelId).catch(() => null);
+  if (channel) await channel.delete('انتهت مدة حجز الروم الخاصة').catch(() => {});
+  await refreshPrivateRoomPanel();
+}
+async function privateRoomCommand(message, args) {
+  const current = db.privateRooms[message.channel.id];
+  const cmd = String(args[0] || '').toLowerCase();
+  if (cmd === 'رومي') {
+    const room = Object.values(db.privateRooms).find(item => item && item.owner === message.author.id && item.status === 'active');
+    if (!room) return message.reply('ليس لديك روم خاصة حالياً.');
+    return message.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 تفاصيل رومك الخاصة')
+      .setDescription('الروم: <#' + room.channelId + '>\nالأعضاء المضافون: ' + ((room.addedMembers || []).map(id => '<@' + id + '>').join('، ') || 'لا يوجد') +
+        '\nتنتهي: <t:' + Math.floor(room.expiresAt / 1000) + ':R>') ] });
+  }
+  if (!current || current.status !== 'active') return false;
+  if (current.owner !== message.author.id) return message.reply('إدارة الروم الخاصة متاحة لصاحب الروم فقط.');
+  if (['add', 'اضافة', 'إضافة'].includes(cmd)) {
+    const user = message.mentions.users.first();
+    if (!user || user.bot || user.id === current.owner) return message.reply('استخدم: `add @عضو`');
+    if ((current.addedMembers || []).includes(user.id)) return message.reply('هذا العضو موجود بالفعل في الروم.');
+    if ((current.addedMembers || []).length >= 5) return message.reply('الحد الأعلى هو 5 أعضاء إضافيين.');
+    const member = await message.guild.members.fetch(user.id).catch(() => null);
+    if (!member) return message.reply('يجب أن يكون العضو في السيرفر.');
+    await message.channel.permissionOverwrites.edit(user.id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+    current.addedMembers.push(user.id);
+    await save();
+    return message.reply('✅ تمت إضافة ' + user + ' إلى الروم.');
+  }
+  if (['rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
+    const user = message.mentions.users.first();
+    if (!user || !(current.addedMembers || []).includes(user.id)) return message.reply('استخدم: `rem @عضو` لعضو مضاف إلى الروم.');
+    await message.channel.permissionOverwrites.delete(user.id).catch(() => {});
+    current.addedMembers = current.addedMembers.filter(id => id !== user.id);
+    await save();
+    return message.reply('✅ تمت إزالة ' + user + ' من الروم.');
+  }
+  return false;
+}
 async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
   const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
@@ -1216,6 +1342,9 @@ async function sweep() {
   const now = Date.now();
   for (const tournament of Object.values(db.tournaments || {})) {
     if (tournament && tournament.status === 'active' && Number(tournament.endsAt) <= now) await finishTournament(tournament);
+  }
+  for (const room of Object.values(db.privateRooms || {})) {
+    if (room && room.status === 'active' && Number(room.expiresAt) <= now) await expirePrivateRoom(room);
   }
   for (const g of Object.values(db.games)) {
     if (!g || !g.expires || g.expires > now) continue;
@@ -1753,6 +1882,19 @@ client.on('messageCreate', async message => {
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
+    if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
+      const handled = await privateRoomCommand(message, args);
+      if (handled !== false) return handled;
+    }
+    if (cmd === 'سعر-الروم') {
+      if (!CFG.owners.includes(message.author.id)) return message.reply('هذا الأمر للأونرز فقط.');
+      const price = amountOf(args[1]);
+      if (!price) return message.reply('الاستخدام: `سعر-الروم 1m`');
+      db.settings.privateRoomPrice = price;
+      await save();
+      await refreshPrivateRoomPanel();
+      return message.reply('تم تحديث سعر حجز الروم إلى **' + fmt(price) + '** كوين.');
+    }
     if (cmd === '!competition') {
       if (!CFG.owners.includes(String(message.author.id))) return message.reply('❌ هذا الأمر للأونرز فقط.');
       if (activeTournament()) return message.reply('توجد بطولة نشطة بالفعل. ألغها أولاً باستخدام `!cancelcompetition`.');
@@ -1845,6 +1987,7 @@ client.on('interactionCreate', async i => {
     }
     const parts = i.customId.split(':');
     const family = parts[0];
+    if (i.customId === 'r:buy') return withLock('private-room-buy:' + i.user.id, () => buyPrivateRoom(i));
     if (!['t', 'c', 'g', 'w', 'l'].includes(family)) return;
     // Lock by the underlying request/game ID, not by button action. A confirm,
     // reject, roll, or duplicate click on the same object cannot race another.
@@ -1881,6 +2024,7 @@ client.once('ready', async () => {
   await save();
   await recoverCreditReviews().catch(console.error);
   await recoverWithdrawalRequests().catch(console.error);
+  await ensurePrivateRoomPanel().catch(console.error);
   await sweep().catch(console.error);
   setInterval(() => sweep().catch(console.error), 30000);
 });
