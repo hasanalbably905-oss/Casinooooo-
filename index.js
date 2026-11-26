@@ -94,6 +94,7 @@ async function loadGitHubData() {
     db.games = parsed.games || {};
     db.withdrawals = parsed.withdrawals || {};
     db.processedTransfers = parsed.processedTransfers || {};
+    db.creditReviews = parsed.creditReviews || {};
     db.transfers = parsed.transfers || {};
     db.adminLogs = parsed.adminLogs || [];
     githubFileSha = remote.sha;
@@ -123,16 +124,12 @@ async function pushGitHubData(content) {
     const result = await githubRequest('PUT', '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH, payload);
     githubFileSha = result.content && result.content.sha ? result.content.sha : githubFileSha;
   } catch (error) {
-    if (error.statusCode !== 409 && error.statusCode !== 422) throw error;
-    const latest = await githubRequest('GET', githubContentPath);
-    if (!latest.sha) throw error;
-    const retry = await githubRequest('PUT', '/repos/' + GH_REPO + '/contents/' + GH_FILE_PATH, {
-      message: 'Update Batoot Casino data',
-      content: Buffer.from(content, 'utf8').toString('base64'),
-      sha: latest.sha,
-      branch: GH_BRANCH,
-    });
-    githubFileSha = retry.content && retry.content.sha ? retry.content.sha : latest.sha;
+    if (error.statusCode === 409 || error.statusCode === 422) {
+      githubDataBlocked = true;
+      console.error('GitHub backup conflict: remote data was not overwritten. Backups paused until reviewed.', error);
+      return;
+    }
+    throw error;
   }
 }
 
@@ -157,8 +154,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, transfers: old.transfers || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, transfers: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 function save() {
@@ -184,6 +181,11 @@ function account(id) {
   db.users[key].coins = Number.isSafeInteger(n) && n >= 0 ? n : 0;
   db.users[key].id = key;
   return db.users[key];
+}
+function canAddCoins(data, amount) {
+  return Number.isSafeInteger(amount) && amount > 0 &&
+    Number.isSafeInteger(data.coins) && data.coins >= 0 &&
+    data.coins <= Number.MAX_SAFE_INTEGER - amount;
 }
 function recordMember(member) {
   const data = account(member.id);
@@ -227,6 +229,50 @@ client.probot = Probot(client, {
   }],
 });
 
+async function queueCreditReview(memberId, amount, guild, data, reason) {
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  const review = db.creditReviews[id] = {
+    id, memberId, amount, status: 'pending', reason,
+    guildId: (guild && guild.id) || CFG.guild,
+    channelId: (data && data.channel && data.channel.id) || null,
+    sourceMessageId: (data && data.message && data.message.id) || null,
+    createdAt: Date.now(),
+  };
+  await save();
+  const channel = await client.channels.fetch(CFG.requestsRoom).catch(() => null);
+  if (channel && channel.isTextBased()) {
+    await channel.send({
+      embeds: [makeEmbed('مراجعة شحن مطلوبة', 'تعذر التحقق آلياً من رقم عملية فريد أو من إمكانية إضافة المبلغ بأمان.\n\nالعضو: <@' + memberId + '>\nالمبلغ: **' + fmt(amount) + '**\nالسبب: ' + reason + '\nرقم المراجعة: `' + id + '`')],
+      components: [new ActionRowBuilder().addComponents(
+        btn('c:approve:' + id, 'اعتماد الشحن', ButtonStyle.Success),
+        btn('c:reject:' + id, 'رفض', ButtonStyle.Danger),
+      )],
+    }).catch(err => console.error('Could not publish credit review:', err));
+  }
+  return review;
+}
+async function creditReviewButton(i, parts) {
+  if (!admin(i.user.id)) return ephemeral(i, 'اعتماد عمليات الشحن للإدارة فقط.');
+  const review = db.creditReviews[parts[2]];
+  if (!review || review.status !== 'pending') return ephemeral(i, 'تمت معالجة هذه المراجعة مسبقاً أو أنها غير موجودة.');
+  if (parts[1] === 'approve') {
+    const wallet = account(review.memberId);
+    if (!canAddCoins(wallet, review.amount)) return ephemeral(i, 'لا يمكن إضافة هذا المبلغ بأمان بسبب حد الرصيد. راجع الحساب يدوياً.');
+    wallet.coins += review.amount;
+    review.status = 'approved';
+    review.balanceAfter = wallet.coins;
+  } else if (parts[1] === 'reject') {
+    review.status = 'rejected';
+  } else return;
+  review.reviewedBy = i.user.id;
+  review.reviewedAt = Date.now();
+  await save();
+  return i.update({
+    embeds: [makeEmbed(review.status === 'approved' ? 'تم اعتماد الشحن' : 'تم رفض الشحن',
+      'العضو: <@' + review.memberId + '>\nالمبلغ: **' + fmt(review.amount) + '**\nالحالة: ' + (review.status === 'approved' ? 'تمت الإضافة إلى الرصيد' : 'مرفوض') + '\nبواسطة: <@' + i.user.id + '>')],
+    components: [],
+  });
+}
 client.probot.on('transfered', async (guild, data, error) => {
   try {
     if (error) {
@@ -258,14 +304,23 @@ client.probot.on('transfered', async (guild, data, error) => {
       data.id ||
       ''
     );
-    if (transferId && db.processedTransfers[transferId]) {
+    if (!transferId) {
+      console.warn('ProBot transfer has no documented unique transaction ID; queued for manual review instead of auto-crediting.');
+      await queueCreditReview(memberId, credited, guild, data, 'لم توفر مكتبة ProBot رقم عملية فريداً يمكن استخدامه لمنع تكرار الشحن.');
+      return;
+    }
+    if (db.processedTransfers[transferId]) {
       console.log('Duplicate ProBot transfer ignored:', transferId);
       return;
     }
 
     const userAccount = account(memberId);
+    if (!canAddCoins(userAccount, credited)) {
+      await queueCreditReview(memberId, credited, guild, data, 'إضافة المبلغ ستتجاوز الحد الآمن للرصيد.');
+      return;
+    }
     userAccount.coins += credited;
-    if (transferId) {
+    {
       db.processedTransfers[transferId] = Date.now();
       const ids = Object.keys(db.processedTransfers);
       if (ids.length > 5000) {
@@ -395,6 +450,7 @@ async function transferButton(i, parts) {
     await save();
     return i.update({ content: 'فشل التحويل: رصيدك لم يعد كافياً. لم يتم خصم أي مبلغ.', embeds: [], components: [] });
   }
+  if (!canAddCoins(receiver, transfer.amount)) return ephemeral(i, 'لا يمكن إتمام التحويل لأن رصيد المستلم سيصل إلى الحد الأعلى المسموح.');
   // Update both balances in one synchronous transaction before saving.
   sender.coins -= transfer.amount;
   receiver.coins += transfer.amount;
@@ -433,6 +489,7 @@ async function claimDaily(message) {
     return message.reply('⏳ استلمت مكافأتك اليومية بالفعل. ارجع بعد **' + hours + ' ساعة و' + minutes + ' دقيقة**.');
   }
   const reward = crypto.randomInt(1500, 5001);
+  if (!canAddCoins(data, reward)) return message.reply('تعذر إضافة المكافأة لأن رصيدك وصل إلى الحد الأعلى.');
   data.coins += reward;
   data.dailyAt = now;
   data.dailyClaims = (data.dailyClaims || 0) + 1;
@@ -448,6 +505,7 @@ async function workForCoins(message) {
   if (remaining > 0) return message.reply('🕒 يمكنك العمل مجدداً بعد **' + Math.ceil(remaining / 60000) + ' دقيقة**.');
   const jobs = ['ساعدت في تنظيم الكازينو', 'أنهيت مهمة يومية', 'فزت بمسابقة صغيرة', 'قدمت خدمة لأحد الأعضاء', 'أنجزت عملاً إضافياً'];
   const reward = crypto.randomInt(500, 2501);
+  if (!canAddCoins(data, reward)) return message.reply('تعذر إضافة الأجر لأن رصيدك وصل إلى الحد الأعلى.');
   data.coins += reward;
   data.workAt = now;
   data.workCount = (data.workCount || 0) + 1;
@@ -541,6 +599,7 @@ async function adminBalance(message, args, add) {
   if (parsed.error) return message.reply('❎ **برجاء وضع أرقام صحيحة**');
   const n = parsed.value;
   const a = account(user.id);
+  if (add && !canAddCoins(a, n)) return message.reply('❎ لا يمكن إضافة هذا المبلغ؛ سيتجاوز الحد الآمن للرصيد.');
   if (!add && a.coins === 0) return message.reply('❎ **هذا الشخص ليس لديه أي رصيد للحذف**');
   if (!add && a.coins < n) return message.reply('❎ **هذا الشخص ليس معه هذا المبلغ لحذفه**');
   a.coins += add ? n : -n;
@@ -563,6 +622,7 @@ async function challenge(message, args) {
   const user = await targetUser(message, args[1]);
   const bet = amountOf(args[2]);
   if (!user || user.bot || user.id === message.author.id || !bet) return message.reply('الاستخدام: تحدي @العضو المبلغ');
+  if (bet > Math.floor(Number.MAX_SAFE_INTEGER / 2)) return message.reply('قيمة الرهان أكبر من الحد الآمن.');
   if (active(message.author.id) || active(user.id)) return message.reply('أحد اللاعبين لديه تحدٍ لم ينتهِ بعد.');
   if (account(message.author.id).coins < bet) return message.reply('❎ **ليس لديك ما يكفي للتحدي على ' + fmt(bet) + '**');
   if (account(user.id).coins < bet) return message.reply('❎ **ليس لدى صديقك ما يكفي للتحدي على ' + fmt(bet) + '**');
@@ -662,6 +722,15 @@ async function settle(g, winner, result) {
     const loser = winner === g.p1 ? g.p2 : g.p1;
     const fee = Math.floor(g.bet * CFG.fee);
     const payout = g.bet * 2 - fee;
+    if (!canAddCoins(account(winner), payout)) {
+      account(g.p1).coins += g.bet;
+      account(g.p2).coins += g.bet;
+      g.status = 'cancelled';
+      g.result = 'تم إلغاء التحدي لحماية الرصيد من تجاوز الحد الآمن؛ تمت إعادة الرهانات.';
+      await save();
+      await editGame(g, 'تم إلغاء التحدي', g.result, []);
+      return;
+    }
     const winnerScore = g.mode === 'close'
       ? Number((g.closeSums && g.closeSums[winner]) || 0)
       : diceTotal(g, winner);
@@ -897,6 +966,35 @@ function withdrawPanel() {
     components: [new ActionRowBuilder().addComponents(btn('w:open', 'طلب سحب', ButtonStyle.Success))],
   };
 }
+async function recoverWithdrawalRequests() {
+  const channel = await client.channels.fetch(CFG.requestsRoom).catch(() => null);
+  if (!channel || !channel.isTextBased()) {
+    console.error('Withdrawal recovery skipped: requests channel is unavailable.');
+    return;
+  }
+  for (const req of Object.values(db.withdrawals)) {
+    if (!req || req.status !== 'pending') continue;
+    if (req.message) {
+      const existing = await channel.messages.fetch(req.message).catch(() => null);
+      if (existing) continue;
+    }
+    const msg = await channel.send({
+      embeds: [makeEmbed('طلب سحب — استعادة تلقائية', 'العضو: <@' + req.user + '>\nالمبلغ: **' + fmt(req.amount) + '**\nالحالة: قيد المراجعة\nرقم الطلب: `' + req.id + '`')],
+      components: [new ActionRowBuilder().addComponents(
+        btn('w:approve:' + req.id, 'قبول', ButtonStyle.Success),
+        btn('w:reject:' + req.id, 'رفض وإرجاع الرصيد', ButtonStyle.Danger),
+      )],
+    }).catch(error => {
+      console.error('Could not restore withdrawal request ' + req.id + ':', error);
+      return null;
+    });
+    if (msg) {
+      req.message = msg.id;
+      req.messageChannel = channel.id;
+      await save();
+    }
+  }
+}
 async function withdrawalModal(i) {
   const n = amountOf(i.fields.getTextInputValue('amount'));
   if (!n || n < CFG.minWithdraw || n > CFG.maxWithdraw) return ephemeral(i, 'المبلغ يجب أن يكون بين ' + fmt(CFG.minWithdraw) + ' و ' + fmt(CFG.maxWithdraw) + '.');
@@ -906,7 +1004,7 @@ async function withdrawalModal(i) {
   if (!ch || !ch.isTextBased()) return ephemeral(i, 'روم طلبات السحب غير متاح.');
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   wallet.coins -= n;
-  db.withdrawals[id] = { id, user: i.user.id, amount: n, status: 'pending', created: Date.now(), message: null };
+  db.withdrawals[id] = { id, user: i.user.id, amount: n, status: 'pending', created: Date.now(), message: null, messageChannel: CFG.requestsRoom };
   await save();
   const msg = await ch.send({
     embeds: [makeEmbed('طلب سحب جديد', 'العضو: <@' + i.user.id + '>\nالمبلغ: **' + fmt(n) + '**\nالرصيد بعد الحجز: **' + fmt(wallet.coins) + '**\nالحالة: قيد المراجعة')],
@@ -1080,6 +1178,7 @@ client.on('interactionCreate', async i => {
     if (!i.isButton()) return;
     const parts = i.customId.split(':');
     if (parts[0] === 't') return transferButton(i, parts);
+    if (parts[0] === 'c') return creditReviewButton(i, parts);
     if (parts[0] === 'g') return gameButton(i, parts);
     if (parts[0] === 'w') return withdrawalButton(i, parts);
   } catch (error) {
@@ -1103,6 +1202,7 @@ client.once('ready', async () => {
     }
   }
   await save();
+  await recoverWithdrawalRequests().catch(console.error);
   await sweep().catch(console.error);
   setInterval(() => sweep().catch(console.error), 30000);
 });
