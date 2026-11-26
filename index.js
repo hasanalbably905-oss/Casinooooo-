@@ -105,6 +105,7 @@ async function loadGitHubData() {
       ? localUsers
       : remoteUsers;
     db.games = parsed.games || {};
+    db.wheel = parsed.wheel || {};
     db.withdrawals = parsed.withdrawals || {};
     db.processedTransfers = parsed.processedTransfers || {};
     db.creditReviews = parsed.creditReviews || {};
@@ -171,8 +172,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, settings: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, wheel: old.wheel || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, wheel: {}, settings: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -1075,6 +1076,93 @@ async function blackjackStand(game) {
   const outcome = dealer > 21 || player > dealer ? 'win' : player === dealer ? 'draw' : 'loss';
   return finishBlackjack(game, outcome);
 }
+
+function wheelEmbed(game, finished = false, result = null) {
+  const chosen = { yellow: '🟡 الأصفر', black: '⚫ الأسود', green: '🟢 الأخضر' }[game.choice] || 'لم يتم الاختيار';
+  const lines = [
+    '**الرهان:** ' + fmt(game.stake) + ' كوين',
+    '**اختيارك:** ' + chosen,
+    '**احتمالات العجلة:** 🟡 7/15 • ⚫ 7/15 • 🟢 1/15',
+    '**مضاعف الفوز:** الأصفر والأسود ×2 • الأخضر ×14',
+  ];
+  if (result) lines.push('', result);
+  return new EmbedBuilder().setColor(finished ? (game.outcome === 'win' ? 0x2ecc71 : 0xe74c3c) : 0xf1c40f)
+    .setTitle(finished ? '🎡 نتيجة عجلة الحظ' : '🎡 عجلة الحظ • اختر لونك')
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: 'Golden Casino • Wheel' }).setTimestamp();
+}
+function wheelRow(game) {
+  if (game.status !== 'playing') return [];
+  return [new ActionRowBuilder().addComponents(
+    btn('wh:yellow:' + game.id, '🟡 أصفر', ButtonStyle.Secondary),
+    btn('wh:black:' + game.id, '⚫ أسود', ButtonStyle.Secondary),
+    btn('wh:green:' + game.id, '🟢 أخضر', ButtonStyle.Success),
+  )];
+}
+async function finishWheel(game, outcome, landed = null) {
+  if (!game || game.status !== 'playing') return;
+  game.status = outcome === 'expired' ? 'expired' : 'finished';
+  game.outcome = outcome;
+  game.landed = landed;
+  game.finishedAt = Date.now();
+  const wallet = account(game.userId);
+  let payout = outcome === 'expired' ? game.stake
+    : outcome === 'win' ? game.stake * (landed === 'green' ? 14 : 2) : 0;
+  if (payout > 0 && !canAddCoins(wallet, payout)) {
+    payout = game.stake;
+    game.outcome = 'refunded';
+  }
+  wallet.coins += payout;
+  game.payout = payout;
+  await save();
+  const channel = await client.channels.fetch(game.channelId).catch(() => null);
+  const msg = channel?.isTextBased() ? await channel.messages.fetch(game.messageId).catch(() => null) : null;
+  const landedLabel = landed ? ({ yellow: '🟡 الأصفر', black: '⚫ الأسود', green: '🟢 الأخضر' }[landed]) : null;
+  const result = outcome === 'expired' ? '⌛ انتهى الوقت؛ أُعيد رهانك بالكامل.'
+    : game.outcome === 'refunded' ? 'تمت إعادة الرهان لحماية رصيدك من تجاوز الحد الآمن.'
+    : outcome === 'win' ? '🎉 فزت! النتيجة: **' + landedLabel + '**\nتمت إضافة **' + fmt(payout) + '** كوين.'
+    : '💔 خسرت. النتيجة: **' + landedLabel + '**\nخسرت **' + fmt(game.stake) + '** كوين.';
+  if (msg) await msg.edit({ embeds: [wheelEmbed(game, true, result)], components: [] }).catch(() => {});
+}
+async function startWheel(message, amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) return message.reply('الاستخدام: `عجلة 100k`');
+  const wallet = account(message.author.id);
+  if (wallet.coins < amount) return message.reply('رصيدك غير كافٍ لهذه الجولة.');
+  if (active(message.author.id) ||
+      Object.values(db.blackjack || {}).some(g => g && g.userId === message.author.id && g.status === 'playing') ||
+      Object.values(db.wheel || {}).some(g => g && g.userId === message.author.id && g.status === 'playing')) {
+    return message.reply('لديك لعبة نشطة بالفعل؛ أنهها أولاً.');
+  }
+  wallet.coins -= amount;
+  const game = {
+    id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+    userId: message.author.id, channelId: message.channel.id, status: 'playing',
+    stake: amount, createdAt: Date.now(), expiresAt: Date.now() + 30000,
+  };
+  db.wheel[game.id] = game;
+  await save();
+  const sent = await message.reply({ embeds: [wheelEmbed(game)], components: wheelRow(game) });
+  game.messageId = sent.id;
+  await save();
+  await trackTournamentBet(message.author.id, amount);
+}
+async function wheelButton(i) {
+  const [, color, id] = i.customId.split(':');
+  const game = db.wheel[id];
+  if (!game || game.status !== 'playing') return ephemeral(i, 'هذه الجولة انتهت أو لم تعد متاحة.');
+  if (i.user.id !== game.userId) return ephemeral(i, 'هذه الجولة ليست لك.');
+  if (Date.now() >= game.expiresAt) {
+    await i.deferUpdate();
+    return finishWheel(game, 'expired');
+  }
+  if (!['yellow', 'black', 'green'].includes(color)) return ephemeral(i, 'اختيار غير صالح.');
+  await i.deferUpdate();
+  game.choice = color;
+  const roll = crypto.randomInt(15);
+  const landed = roll === 0 ? 'green' : roll <= 7 ? 'yellow' : 'black';
+  return finishWheel(game, color === landed ? 'win' : 'loss', landed);
+}
+
 async function startBlackjack(message, amount) {
   if (!Number.isSafeInteger(amount) || amount <= 0) return message.reply('الاستخدام: بلاك جاك 100k');
   const wallet = account(message.author.id);
@@ -1471,6 +1559,9 @@ async function sweep() {
   const now = Date.now();
   for (const tournament of Object.values(db.tournaments || {})) {
     if (tournament && tournament.status === 'active' && Number(tournament.endsAt) <= now) await finishTournament(tournament);
+  }
+  for (const game of Object.values(db.wheel || {})) {
+    if (game && game.status === 'playing' && Number(game.expiresAt) <= now) await finishWheel(game, 'expired');
   }
   for (const game of Object.values(db.blackjack || {})) {
     if (game && game.status === 'playing' && Number(game.expiresAt) <= now) await finishBlackjack(game, 'expired');
@@ -2014,6 +2105,7 @@ client.on('messageCreate', async message => {
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
+    if (['عجلة', 'wheel', 'روليت'].includes(cmd)) return withLock('wheel:' + message.author.id, () => startWheel(message, amountOf(args[1])));
     if (['بلاك', 'blackjack', 'بلاكجاك'].includes(cmd)) return startBlackjack(message, amountOf(args[1]));
     if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
       const handled = await privateRoomCommand(message, args);
@@ -2085,7 +2177,8 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس @عضو — عرض الرصيد\nيومي — مكافأة كل 24 ساعة\nعمل — عمل كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل مع تأكيد\nربط @عضو — ربط محفظتين بموافقة الطرف الثاني\nإيداع مبلغ / سحب مبلغ — نقل رصيد بين المحفظتين المرتبطتين\nفك @عضو — فصل الحساب المرتبط\ntax مبلغ / ضريبة مبلغ — حساب الضريبة\nhideme / unhideme — إخفاء أو إظهار رصيدك\nتحويلاتي — سجل تحويلاتك\nتوب — أعلى الأرصدة الظاهرة\nadd / اضافة @عضو مبلغ — إضافة رصيد للإدارة\nrmv / ازالة @عضو مبلغ — خصم رصيد للإدارة\nsetmoney @عضو مبلغ — تعيين الرصيد (الأونر فقط)\ntotalcoins / totalwithdraw — إحصائيات مالية للإدارة\nشحن مبلغ — شحن عبر ProBot\nwithdraw — لوحة طلب السحب\nسجل-اداري — سجل عمليات الإدارة\nبلاك جاك مبلغ — لعبة بلاك جاك ضد الموزّع\nحجز روم — من لوحة الرومات الخاصة في روم الحجوزات\nرومي — تفاصيل رومك الخاصة\nadd @عضو / rem @عضو — إدارة أعضاء رومك\nسعر-الروم مبلغ — تغيير سعر الحجز (الأونرز فقط)')] });
+        'فلوس @عضو — عرض الرصيد\nيومي — مكافأة كل 24 ساعة\nعمل — عمل كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل مع تأكيد\nربط @عضو — ربط محفظتين بموافقة الطرف الثاني\nإيداع مبلغ / سحب مبلغ — نقل رصيد بين المحفظتين المرتبطتين\nفك @عضو — فصل الحساب المرتبط\ntax مبلغ / ضريبة مبلغ — حساب الضريبة\nhideme / unhideme — إخفاء أو إظهار رصيدك\nتحويلاتي — سجل تحويلاتك\nتوب — أعلى الأرصدة الظاهرة\nadd / اضافة @عضو مبلغ — إضافة رصيد للإدارة\nrmv / ازالة @عضو مبلغ — خصم رصيد للإدارة\nsetmoney @عضو مبلغ — تعيين الرصيد (الأونر فقط)\ntotalcoins / totalwithdraw — إحصائيات مالية للإدارة\nشحن مبلغ — شحن عبر ProBot\nwithdraw — لوحة طلب السحب\nسجل-اداري — سجل عمليات الإدارة\nعجلة مبلغ — عجلة الحظ (أصفر/أسود ×2، أخضر ×14)
+بلاك جاك مبلغ — لعبة بلاك جاك ضد الموزّع\nحجز روم — من لوحة الرومات الخاصة في روم الحجوزات\nرومي — تفاصيل رومك الخاصة\nadd @عضو / rem @عضو — إدارة أعضاء رومك\nسعر-الروم مبلغ — تغيير سعر الحجز (الأونرز فقط)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
@@ -2122,6 +2215,7 @@ client.on('interactionCreate', async i => {
     const family = parts[0];
     if (i.customId === 'r:buy') return withLock('private-room-buy:' + i.user.id, () => buyPrivateRoom(i));
     if (i.customId.startsWith('bj:')) return withLock('blackjack:' + i.customId.split(':')[2], () => blackjackButton(i));
+    if (i.customId.startsWith('wh:')) return withLock('wheel:' + i.customId.split(':')[2], () => wheelButton(i));
     if (!['t', 'c', 'g', 'w', 'l'].includes(family)) return;
     // Lock by the underlying request/game ID, not by button action. A confirm,
     // reject, roll, or duplicate click on the same object cannot race another.
