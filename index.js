@@ -590,7 +590,9 @@ async function requestAccountLink(message, args) {
 async function requestLinkedWithdrawal(message, args) {
   const partnerId = linkedTo(message.author.id);
   if (!partnerId) return message.reply('❎ حسابك غير مرتبط. استخدم `ربط @عضو` أولاً.');
-  const amount = amountOf(args[1]);
+  const mentioned = message.mentions.users.first();
+  if (mentioned && mentioned.id !== partnerId) return message.reply('❎ يمكنك السحب فقط من الحساب المرتبط بك.');
+  const amount = amountOf(mentioned ? args[2] : args[1]);
   if (!amount) return message.reply('❎ الاستخدام: `سحب 10m` أو `سحب 250k`.');
   const source = account(partnerId);
   if (source.coins < amount) return message.reply('❎ رصيد الحساب المرتبط غير كافٍ. رصيده الحالي: **' + fmt(source.coins) + '**.');
@@ -616,6 +618,49 @@ async function requestLinkedWithdrawal(message, args) {
   if (!sent) { db.linkedWithdrawals[id].status = 'cancelled'; await save(); return; }
   db.linkedWithdrawals[id].messageId = sent.id;
   await save();
+}
+async function depositToLinkedPartner(message, args) {
+  const userId = message.author.id;
+  const partnerId = linkedTo(userId);
+  if (!partnerId) return message.reply('❎ حسابك غير مرتبط. استخدم ربط @عضو أولاً.');
+  const mentioned = message.mentions.users.first();
+  if (mentioned && mentioned.id !== partnerId) return message.reply('❎ يمكنك الإيداع فقط للحساب المرتبط بك.');
+  const raw = String(mentioned ? args[2] : args[1] || '').replace(/,/g, '').toUpperCase();
+  if (!raw) return message.reply('الاستخدام: إيداع @عضو 1000 أو إيداع 1K أو إيداع كامل.');
+  const sender = account(userId);
+  const receiver = account(partnerId);
+  let amount;
+  if (raw === 'كامل' || raw === 'فل') amount = sender.coins;
+  else if (raw === 'نص') amount = Math.floor(sender.coins / 2);
+  else if (raw.endsWith('%')) {
+    const percent = Number(raw.slice(0, -1));
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) return message.reply('النسبة يجب أن تكون بين 1% و100%.');
+    amount = Math.floor(sender.coins * percent / 100);
+  } else {
+    const match = raw.match(/^(\d+(?:\.\d+)?)(K|M)?$/);
+    if (!match) return message.reply('❎ صيغة المبلغ غير صحيحة.');
+    amount = Number(match[1]) * (match[2] === 'K' ? 1000 : match[2] === 'M' ? 1000000 : 1);
+  }
+  if (!Number.isSafeInteger(amount) || amount <= 0) return message.reply('❎ يجب إدخال مبلغ صحيح أكبر من صفر.');
+  if (sender.coins < amount) return message.reply('❎ رصيدك غير كافٍ. رصيدك الحالي: ' + fmt(sender.coins));
+  if (!canAddCoins(receiver, amount)) return message.reply('❎ لا يمكن إضافة المبلغ إلى رصيد الحساب المرتبط.');
+  if (active(userId) || active(partnerId)) return message.reply('❎ لا يمكن الإيداع أثناء وجود أحدكما في تحدٍ نشط.');
+  if (linkedTo(partnerId) !== userId) return message.reply('❎ الربط بين الحسابين غير مكتمل حالياً.');
+  sender.coins -= amount;
+  receiver.coins += amount;
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  db.transfers[id] = { id, from: userId, to: partnerId, amount, type: 'linked-deposit', createdAt: Date.now() };
+  await save();
+  const embed = greenEmbed('💸 عملية إيداع ناجحة',
+    'تم إيداع **' + fmt(amount) + '** كوين إلى <@' + partnerId + '>.')
+    .addFields(
+      { name: 'رصيدك الجديد', value: fmt(sender.coins), inline: true },
+      { name: 'رصيد الشريك الجديد', value: fmt(receiver.coins), inline: true },
+    )
+    .setTimestamp();
+  await message.reply({ embeds: [embed] });
+  const partner = await client.users.fetch(partnerId).catch(() => null);
+  if (partner) await partner.send('💰 استلمت ' + fmt(amount) + ' كوين من <@' + userId + '>.').catch(() => {});
 }
 async function unlinkAccounts(message, args) {
   const target = await targetUser(message, args[1]);
@@ -1376,7 +1421,12 @@ client.on('messageCreate', async message => {
     if (await handleGoldenCatalog(message, { ownerId: CFG.owner })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
     if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
-    if (cmd === 'فك') return unlinkAccounts(message, args);
+    if (cmd === 'إيداع' || cmd === 'ايداع') {
+      const partnerId = linkedTo(message.author.id);
+      const lockKey = 'linked-deposit:' + [message.author.id, partnerId || 'none'].sort().join(':');
+      return withLock(lockKey, () => depositToLinkedPartner(message, args));
+    }
+    if (cmd === 'فصل') return unlinkAccounts(message, args);
     if (['تحويل', 'transfer', 'pay'].includes(cmd)) return createMemberTransfer(message, args);
     if (cmd === 'شحن') {
       const parsed = legacyAdminAmount(args[1]);
