@@ -13,6 +13,7 @@ const { handleGoldenCatalog } = require('./golden-catalog');
 const { handleGoldenSocial } = require('./golden-social');
 const { handleGoldenUtilities } = require('./golden-utilities');
 const { handleGoldenExtras } = require('./golden-extras');
+const { handleAdminCommands } = require('./admin-commands');
 const { rpsWinner, xoWinner, xoIsDraw } = require('./golden-game-rules');
 
 const CFG = {
@@ -2911,6 +2912,7 @@ client.on('messageCreate', async message => {
         ? '✅ تم تشغيل نظام الانفايت. كل عضو جديد عبر دعوتك يمنحك **30,000,000** عملة.'
         : '⛔ تم إيقاف نظام الانفايت.');
     }
+    if (await handleAdminCommands(message, { isAdmin: admin, db, save })) return;
     if (await handleGoldenUtilities(message, { isAdmin: admin })) return;
     if (await handleGoldenExtras(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '', suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID || '' })) return;
     if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '' })) return;
