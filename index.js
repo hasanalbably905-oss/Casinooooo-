@@ -1424,9 +1424,10 @@ function privateRoomPanelEmbed() {
     ).setFooter({ text: 'Golden Casino • Private Rooms' }).setTimestamp();
 }
 async function ensurePrivateRoomPanel() {
-  const channel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
+  const panelChannelId = db.settings.privateRoomPanelChannelId || CFG.rentalRoom;
+  const channel = await client.channels.fetch(panelChannelId).catch(() => null);
   if (!channel || !channel.isTextBased()) {
-    console.warn('Private room panel channel unavailable:', CFG.rentalRoom);
+    console.warn('Private room panel channel unavailable:', panelChannelId);
     return;
   }
   const row = new ActionRowBuilder().addComponents(btn('r:buy', '🎟️ احجز روم خاصة', ButtonStyle.Success));
@@ -1438,13 +1439,23 @@ async function ensurePrivateRoomPanel() {
   await save();
 }
 async function refreshPrivateRoomPanel() {
-  const channel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
+  const panelChannelId = db.settings.privateRoomPanelChannelId || CFG.rentalRoom;
+  const channel = await client.channels.fetch(panelChannelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return;
   const row = new ActionRowBuilder().addComponents(btn('r:buy', '🎟️ احجز روم خاصة', ButtonStyle.Success));
   const id = db.settings.privateRoomPanelMessageId;
   const msg = id ? await channel.messages.fetch(id).catch(() => null) : null;
   if (msg) await msg.edit({ embeds: [privateRoomPanelEmbed()], components: [row] }).catch(() => {});
   else await ensurePrivateRoomPanel();
+}
+async function postPrivateRoomPanel(channel) {
+  if (!channel || !channel.isTextBased()) throw new Error('The selected panel channel is not text-based.');
+  const row = new ActionRowBuilder().addComponents(btn('r:buy', '🎟️ احجز روم خاصة', ButtonStyle.Success));
+  const sent = await channel.send({ embeds: [privateRoomPanelEmbed()], components: [row] });
+  db.settings.privateRoomPanelChannelId = channel.id;
+  db.settings.privateRoomPanelMessageId = sent.id;
+  await save();
+  return sent;
 }
 async function buyPrivateRoom(i) {
   if (activePrivateRooms().length >= 10) return ephemeral(i, 'عذراً، جميع الرومات الخاصة العشر محجوزة حالياً.');
@@ -1458,7 +1469,7 @@ async function buyPrivateRoom(i) {
   if (Object.values(db.linkedWithdrawals || {}).some(row => row && row.status === 'pending' && (row.from === i.user.id || row.to === i.user.id))) return ephemeral(i, 'لديك طلب سحب من محفظة مرتبطة قيد الانتظار.');
   if (wallet.coins < price) return ephemeral(i, 'رصيدك غير كافٍ. السعر: **' + fmt(price) + '** كوين.');
   const guild = await client.guilds.fetch(CFG.guild).catch(() => null);
-  const panel = await client.channels.fetch(CFG.rentalRoom).catch(() => null);
+  const panel = await client.channels.fetch(db.settings.privateRoomPanelChannelId || CFG.rentalRoom).catch(() => null);
   if (!guild || !panel || !panel.isTextBased()) return ephemeral(i, 'روم الحجوزات غير متاحة حالياً، تواصل مع الإدارة.');
   const member = await guild.members.fetch(i.user.id).catch(() => null);
   if (!member) return ephemeral(i, 'يجب أن تكون عضواً في السيرفر لحجز روم خاصة.');
@@ -1537,9 +1548,15 @@ async function privateRoomCommand(message, args) {
   if (cmd === 'رومي') {
     const room = Object.values(db.privateRooms).find(item => item && item.owner === message.author.id && item.status === 'active');
     if (!room) return message.reply('ليس لديك روم خاصة حالياً.');
-    return message.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎰 تفاصيل رومك الخاصة')
-      .setDescription('الروم: <#' + room.channelId + '>\nالأعضاء المضافون: ' + ((room.addedMembers || []).map(id => '<@' + id + '>').join('، ') || 'لا يوجد') +
-        '\nتنتهي: <t:' + Math.floor(room.expiresAt / 1000) + ':R>') ] });
+    const channel = await message.client.channels.fetch(room.channelId).catch(() => null);
+    if (!channel) return message.reply('تعذر العثور على رومك الخاصة.');
+    return message.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('معلومات الروم "' + channel.name + '"')
+      .addFields(
+        { name: '> صاحب الروم:', value: '<@' + room.owner + '> (' + room.owner + ')', inline: false },
+        { name: '> المدة المتبقية:', value: privateRoomTimeLeft(room.expiresAt), inline: false },
+        { name: '> الأعضاء المضافين:', value: ((room.addedMembers || []).map(id => '<@' + id + '>').join('، ') || 'لا يوجد أعضاء'), inline: false },
+      )
+      .setThumbnail(message.guild.iconURL({ dynamic: true }) || null)] });
   }
   if (!current || current.status !== 'active') return false;
   if (current.owner !== message.author.id) return message.reply('إدارة الروم الخاصة متاحة لصاحب الروم فقط.');
@@ -2422,8 +2439,8 @@ client.on('messageCreate', async message => {
     }
     if (['!post', '!roompanel'].includes(cmd)) {
       if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
-      await ensurePrivateRoomPanel();
-      return message.reply('✅ تم تحديث لوحة حجز الرومات في روم الحجوزات المحددة بالإعدادات.');
+      await postPrivateRoomPanel(message.channel);
+      return message.reply('✅ تم نشر لوحة حجز الرومات في هذه القناة.');
     }
     if (['!setpr', '!سعر-الروم'].includes(cmd)) {
       if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
@@ -2447,7 +2464,7 @@ client.on('messageCreate', async message => {
       const rooms = activePrivateRooms();
       const body = rooms.length ? rooms.map((room, index) => (index + 1) + '. <#' + room.channelId + '> — <@' + room.owner + '> — تنتهي <t:' + Math.floor(room.expiresAt / 1000) + ':R>').join('\n') : 'لا توجد رومات محجوزة حالياً.';
       return message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🏠 الرومات الخاصة النشطة')
-        .setDescription(body + '\n\nالسعر الحالي: **' + fmt(privateRoomPrice()) + '** كوين\nالمتاح: **' + Math.max(0, 5 - rooms.length) + '/5**')] });
+        .setDescription(body + '\n\nالسعر الحالي: **' + fmt(privateRoomPrice()) + '** كوين\nالمتاح: **' + Math.max(0, 10 - rooms.length) + '/10**')] });
     }
     if (cmd === '!rstroom') {
       if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
