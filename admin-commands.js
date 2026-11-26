@@ -22,6 +22,8 @@ async function handleAdminCommands(message, options = {}) {
     warn: ['warn', 'تحذير'], warns: ['warns', 'تحذيرات'], clearwarns: ['clearwarns', 'مسح-تحذيرات'],
     clear: ['clear', 'مسح'], lock: ['lock', 'قفل'], unlock: ['unlock', 'فتح'],
     slowmode: ['slowmode', 'بطء'], nick: ['nick', 'لقب'],
+    addrole: ['addrole', 'roleadd', 'اعطاء-رتبة'], removerole: ['removerole', 'rolerem', 'سحب-رتبة'],
+    userinfo: ['userinfo', 'معلومات-عضو'], serverinfo: ['serverinfo', 'معلومات-السيرفر'],
   };
   const action = Object.keys(aliases).find(key => aliases[key].includes(cmd));
   if (!action) return false;
@@ -100,12 +102,58 @@ async function handleAdminCommands(message, options = {}) {
     const embed = new EmbedBuilder().setColor(COLORS.info).setTitle('⚠️ تحذيرات <@' + id + '>').setDescription(rows.slice(-15).reverse().map((w, i) => '**' + (i + 1) + '.** ' + w.reason + '\nبواسطة <@' + w.moderator + '> • <t:' + Math.floor(w.at / 1000) + ':R>').join('\n\n'));
     return message.reply({ embeds: [embed] });
   }
+  if (action === 'userinfo') {
+    const member = await target(args[0] || message.author.id);
+    if (!member) return fail('لم أجد العضو المحدد.');
+    const embed = new EmbedBuilder().setColor(COLORS.info).setTitle('👤 معلومات العضو • ' + member.user.tag).setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+      .addFields(
+        { name: 'المنشن', value: member.toString(), inline: true },
+        { name: 'ID', value: member.id, inline: true },
+        { name: 'أعلى رتبة', value: member.roles.highest.toString(), inline: true },
+        { name: 'تاريخ إنشاء الحساب', value: '<t:' + Math.floor(member.user.createdTimestamp / 1000) + ':R>', inline: true },
+        { name: 'تاريخ دخول السيرفر', value: member.joinedTimestamp ? '<t:' + Math.floor(member.joinedTimestamp / 1000) + ':R>' : 'غير معروف', inline: true },
+        { name: 'التحذيرات', value: String((options.db.moderationWarnings?.[member.id] || []).length), inline: true },
+        { name: 'الرتب', value: member.roles.cache.filter(role => role.id !== guild.id).map(role => role.toString()).slice(0, 15).join('، ') || 'لا توجد', inline: false },
+      ).setTimestamp();
+    return message.reply({ embeds: [embed] });
+  }
+  if (action === 'serverinfo') {
+    const owner = await guild.fetchOwner().catch(() => null);
+    const embed = new EmbedBuilder().setColor(COLORS.info).setTitle('🏠 معلومات السيرفر • ' + guild.name).setThumbnail(guild.iconURL({ size: 256 }))
+      .addFields(
+        { name: 'المالك', value: owner ? owner.user.tag : 'غير معروف', inline: true },
+        { name: 'الأعضاء', value: String(guild.memberCount), inline: true },
+        { name: 'القنوات', value: String(guild.channels.cache.size), inline: true },
+        { name: 'الرتب', value: String(guild.roles.cache.size), inline: true },
+        { name: 'تاريخ الإنشاء', value: '<t:' + Math.floor(guild.createdTimestamp / 1000) + ':R>', inline: true },
+        { name: 'معرّف السيرفر', value: guild.id, inline: true },
+      ).setTimestamp();
+    return message.reply({ embeds: [embed] });
+  }
+  if (action === 'addrole' || action === 'removerole') {
+    const member = await target(args[0]);
+    const roleId = String(args[1] || '').replace(/[<@&>]/g, '');
+    const role = guild.roles.cache.get(roleId);
+    if (!member || !role) return fail('الاستخدام: ' + (action === 'addrole' ? 'addrole' : 'removerole') + ' @عضو @رتبة');
+    const issue = hierarchy(member, PermissionFlagsBits.ManageRoles); if (issue) return fail(issue);
+    if (role.id === guild.id || role.managed || role.position >= me.roles.highest.position) return fail('لا يمكن للبوت إدارة هذه الرتبة بسبب ترتيبها أو لأنها رتبة مُدارة.');
+    const actor = guild.members.cache.get(message.author.id);
+    if (actor.id !== guild.ownerId && role.position >= actor.roles.highest.position) return fail('لا يمكنك إدارة رتبة أعلى من رتبتك أو مساوية لها.');
+    if (action === 'addrole') {
+      if (member.roles.cache.has(role.id)) return fail('العضو يمتلك هذه الرتبة بالفعل.');
+      await member.roles.add(role, 'منح رتبة بواسطة ' + message.author.tag);
+      return ok('تم منح رتبة ' + role.toString() + ' إلى ' + member.toString() + '.');
+    }
+    if (!member.roles.cache.has(role.id)) return fail('العضو لا يمتلك هذه الرتبة.');
+    await member.roles.remove(role, 'سحب رتبة بواسطة ' + message.author.tag);
+    return ok('تم سحب رتبة ' + role.toString() + ' من ' + member.toString() + '.');
+  }
   if (action === 'clear') {
     if (!me?.permissions.has(PermissionFlagsBits.ManageMessages)) return fail('البوت لا يملك صلاحية إدارة الرسائل.');
     const count = Number(args[0]);
     if (!Number.isInteger(count) || count < 1 || count > 100) return fail('الاستخدام: clear 1-100');
     const deleted = await message.channel.bulkDelete(count, true);
-    const notice = await message.channel.send('🧹 تم حذف ' + Math.max(0, deleted.size - 1) + ' رسالة.');
+    const notice = await message.channel.send('🧹 تم حذف ' + deleted.size + ' رسالة.');
     setTimeout(() => notice.delete().catch(() => {}), 4000);
     return true;
   }
