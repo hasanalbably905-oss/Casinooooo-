@@ -2089,6 +2089,7 @@ async function challenge(message, args) {
       ? 'تم تغيير إعداد استقبال التحديات إلى عام.'
       : 'تم تغيير إعداد استقبال التحديات إلى الأصدقاء فقط.');
   }
+  if (!args[1]) return message.reply('عذراً ولكن يبدو أنك لم تقم بتحديد لاعب حتي تلعب .');
   const user = await targetUser(message, args[1]);
   const bet = amountOf(args[2]);
   if (!user || user.bot || user.id === message.author.id || !bet) return message.reply('الاستخدام: تحدي @العضو المبلغ');
@@ -2250,6 +2251,11 @@ function gameRows(g) {
     btn('g:accept:' + g.id, 'قبول', ButtonStyle.Success),
     btn('g:decline:' + g.id, 'رفض', ButtonStyle.Danger),
   )];
+  if (g.status === 'selecting') return [
+    new ActionRowBuilder().addComponents(btn('g:apmode:conditions:' + g.id, 'شروط', ButtonStyle.Success), btn('g:apmode:normal:' + g.id, 'بدون شروط', ButtonStyle.Primary), btn('g:apmode:limit:' + g.id, 'الحد التقريبي', ButtonStyle.Secondary)),
+    new ActionRowBuilder().addComponents(btn('g:apmode:descending:' + g.id, 'الحد التنازلي', ButtonStyle.Secondary), btn('g:apmode:far:' + g.id, 'الحد الأبعد', ButtonStyle.Secondary), btn('g:apback:' + g.id, 'إلغاء', ButtonStyle.Danger)),
+  ];
+  if (g.status === 'selecting_subtype') return [new ActionRowBuilder().addComponents(btn('g:apsub:natural:' + g.id, 'طبيعي', ButtonStyle.Primary), btn('g:apsub:show:' + g.id, 'إظهار أرقام', ButtonStyle.Success), btn('g:apback:' + g.id, 'رجوع', ButtonStyle.Danger))];
   if (g.status === 'playing' && g.mode === 'close') return [new ActionRowBuilder().addComponents(
     btn('g:low:' + g.id, g.closeRanges.low[0] + ' - ' + g.closeRanges.low[1], ButtonStyle.Primary),
     btn('g:finish:' + g.id, 'finish', ButtonStyle.Success),
@@ -2285,7 +2291,7 @@ async function editGame(g, title, description, components) {
   const ch = await client.channels.fetch(g.channel).catch(() => null);
   if (!ch || !ch.isTextBased()) return;
   const msg = await ch.messages.fetch(g.message).catch(() => null);
-  const embed = ['match','sortnum','bombchips'].includes(g.mode) ? gameBoardEmbed(g) : g.mode === 'close' ? legacyCloseEmbed(g)
+  const embed = ['match','sortnum','bombchips'].includes(g.mode) ? gameBoardEmbed(g) : g.mode === 'close' && ['selecting','selecting_subtype'].includes(g.status) ? approximateModeEmbed(g) : g.mode === 'close' ? legacyCloseEmbed(g)
     : g.mode === 'xo' ? xoEmbed(g)
     : g.mode === 'rps' ? rpsEmbed(g)
     : legacyGameEmbed(g);
@@ -2335,12 +2341,10 @@ async function settle(g, winner, result) {
 async function refund(g, reason) {
   if (!g || !g.escrow || !['selecting', 'playing'].includes(g.status)) return;
   g.status = 'cancelled';
-  const returned = g.mode === 'close' ? Math.floor(g.bet / 2) : g.bet;
+  const returned = Math.floor(g.bet / 2);
   account(g.p1).coins += returned;
   account(g.p2).coins += returned;
-  g.result = g.mode === 'close'
-    ? reason + '\nتم خصم نصف الرهان من كل لاعب بسبب عدم إكمال التحدي.'
-    : reason;
+  g.result = reason + '\nتم خصم نصف المبلغ من الطرفين بسبب عدم إكمال التحدي.';
   await save();
   await recordLiveBetResult('pvp:' + g.id, { userId: g.p1, opponentId: g.p2, amount: g.bet, game: 'تحدي الأعضاء', status: 'refund', payout: returned * 2, detail: g.result });
   await editGame(g, 'تم إلغاء التحدي', g.result, []);
@@ -2380,6 +2384,14 @@ async function sweep() {
   }
   await save();
 }
+function approximateModeEmbed(g) {
+  const detail = g.status === 'selecting_subtype'
+    ? (g.approxMode === 'limit' ? '🎯 **الحد التقريبي - اختر النوع**\\nطبيعي: تظهر الأرقام بعد كل جولة بشكل عادي.\\nإظهار أرقام: يظهر مجموع كل لاعب في الإيمبد بشكل مستمر.' : g.approxMode === 'descending' ? '🔽 **الحد التنازلي - اختر النوع**\\nطبيعي: تبدأ من الرقم وتطرح بدون عرض أرقام المنافس.\\nإظهار أرقام: يظهر المتبقي لكل لاعب في الإيمبد بشكل مستمر.' : '🎯 **الحد الأبعد - اختر النوع**\\nطبيعي: تظهر الأرقام بعد كل جولة بشكل عادي.\\nإظهار أرقام: يظهر مجموع كل لاعب في الإيمبد بشكل مستمر.')
+    : '📋 إختر نوعية التحدي:\\n🔹 **بدون شروط**: اللعبة الأساسية بدون قيود إضافية.\\n🔸 **شروط**: اللعبة مع تحديات وقواعد إضافية.\\n🎯 **الحد التقريبي**: الأقرب للرقم يفوز (فوق أو تحت بدون تخطي).\\n🔽 **الحد التنازلي**: تبدأ من الرقم وتطرح — الأقرب للصفر يفوز.\\n🎯 **الحد الأبعد**: تجمع أرقام — الأبعد عن الهدف يفوز.';
+  return new EmbedBuilder().setColor(0x5865f2).setTitle(g.status === 'selecting_subtype' ? '🎮 اختر النوع' : '🎮 إختيار نوعية التحدي')
+    .setDescription('> 👥 **المنافس:** <@' + g.p2 + '>\\n> 💰 **المبلغ المحدد:** `' + fmt(g.bet) + '`\\n\\n' + detail)
+    .setFooter({ text: g.approxMode || 'يرجى إختيار نوعية التحدي المناسبة' });
+}
 function initializeApproximateGame(g) {
   const firstNumbers = [];
   for (let n = 19; n <= 79; n += 3) firstNumbers.push(n);
@@ -2395,6 +2407,7 @@ function initializeApproximateGame(g) {
   };
   g.closeNumbers = { [g.p1]: [], [g.p2]: [] };
   g.closeSums = { [g.p1]: 0, [g.p2]: 0 };
+  g.closeRemaining = { [g.p1]: g.closeMax, [g.p2]: g.closeMax };
   g.closeDone = { [g.p1]: false, [g.p2]: false };
   g.closeOrder = crypto.randomInt(2) === 0 ? [g.p1, g.p2] : [g.p2, g.p1];
   g.closeTurn = g.closeOrder[0];
@@ -2411,9 +2424,9 @@ async function finishApproximateTurn(g, reason) {
   }
   const a = g.closeSums[g.p1];
   const b = g.closeSums[g.p2];
-  const aDiff = Math.abs(a - g.closeMax);
-  const bDiff = Math.abs(b - g.closeMax);
-  const winner = aDiff === bDiff ? null : (aDiff < bDiff ? g.p1 : g.p2);
+  const aDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p1] : a) - (g.approxMode === 'descending' ? 0 : g.closeMax));
+  const bDiff = Math.abs((g.approxMode === 'descending' ? g.closeRemaining[g.p2] : b) - (g.approxMode === 'descending' ? 0 : g.closeMax));
+  const winner = aDiff === bDiff ? null : (g.approxMode === 'far' ? (aDiff > bDiff ? g.p1 : g.p2) : (aDiff < bDiff ? g.p1 : g.p2));
   const result = 'الرقم المستهدف: **' + g.closeMax + '**\n' +
     '<@' + g.p1 + '> : ' + (g.closeNumbers[g.p1].join(' + ') || '—') + ' = **' + a + '** (الفرق: **' + aDiff + '** )\n' +
     '<@' + g.p2 + '> : ' + (g.closeNumbers[g.p2].join(' + ') || '—') + ' = **' + b + '** (الفرق: **' + bDiff + '** )\n' +
@@ -2427,6 +2440,22 @@ async function gameButton(i, parts) {
   const g = db.games[id];
   if (!g) return ephemeral(i, 'هذا التحدي غير موجود أو انتهى.');
   const uid = i.user.id;
+  if (['apmode', 'apsub', 'apback'].includes(action)) {
+    if (!['selecting', 'selecting_subtype'].includes(g.status)) return ephemeral(i, 'اختيار نوع التحدي لم يعد متاحاً.');
+    if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار نوع التحدي.');
+    if (action === 'apback') {
+      if (g.status === 'selecting_subtype') { g.status = 'selecting'; await save(); return i.update({ embeds: [approximateModeEmbed(g)], components: gameRows(g) }); }
+      return refund(g, 'تم إلغاء التحدي بنجاح.');
+    }
+    if (action === 'apmode') {
+      const mode = parts[2]; if (!['normal','conditions','limit','descending','far'].includes(mode)) return ephemeral(i, 'نوع التحدي غير صالح.');
+      g.approxMode = mode;
+      if (['limit','descending','far'].includes(mode)) { g.status = 'selecting_subtype'; await save(); return i.update({ content: '> ' + i.user + ' يختار نوع التحدي... ⏳', embeds: [approximateModeEmbed(g)], components: gameRows(g) }); }
+      g.closeVisibility = 'natural';
+    } else g.closeVisibility = parts[2] === 'show' ? 'show' : 'natural';
+    g.status = 'playing'; g.expires = Date.now() + CFG.gameMs; initializeApproximateGame(g); await save();
+    return i.update({ content: '<@' + g.closeTurn + '>\\n اصبح دورك !', embeds: [legacyCloseEmbed(g)], components: gameRows(g) });
+  }
   if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps', 'selectmatch', 'selectsortnum', 'selectbombchips'].includes(action)) {
     if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
     if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
@@ -2446,7 +2475,7 @@ async function gameButton(i, parts) {
       dice: { name: '🎲 لعبة النرد:', value: '> يفوز صاحب أعلى مجموع من ثلاث رميات.' },
       close: { name: '📊 الرقم التقريبي:', value: '> حاول الاقتراب من الرقم المستهدف؛ يفوز صاحب أقل فرق.' },
       xo: { name: '❌ أكس أو:', value: '> أكمل ثلاثة رموز متتالية أفقياً أو عمودياً أو قطرياً.' },
-      rps: { name: '✂️ حجرة ورقة مقص:', value: '> يختار كل لاعب سراً، ثم تتم مقارنة الاختيارين.' },
+      rps: { name: '✂️ لعبة حجرة ورقة مقص:', value: '> هنهزر يسطا ؟ مش عارف حجره ورقه مقص ؟' },
       match: { name: '🃏 الذاكرة:', value: '> اعثر على الأزواج المتطابقة.' },
       sortnum: { name: '🔢 ترتيب الأرقام:', value: '> رتّب خمسة أرقام تصاعدياً في أربع جولات.' },
       bombchips: { name: '💣 Bomb Chips:', value: '> تجنب القنابل المخفية في لوحة الخصم.' },
@@ -2472,7 +2501,7 @@ async function gameButton(i, parts) {
       components: gameRows(g),
     });
     return i.editReply({
-      content: '> تم اختيار لعبة: ' + details.name + ' !!',
+      content: '> لقد تم اختيار العبة هي : `' + ({ dice: 'نرد', close: 'الحد التقريبي', xo: 'اكس او', rps: 'حجرة ورقة مقص', match: 'التطابق', sortnum: 'ترتيب الأرقام', bombchips: 'Bomb Chips' }[g.mode]) + '` !!',
     });
   }
   if (action === 'accept' || action === 'decline') {
@@ -2482,7 +2511,7 @@ async function gameButton(i, parts) {
       g.status = 'declined';
       await save();
       return i.update({
-        content: '> تم رفض التحدي بنجاح ' + i.user.toString() + ' !\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||',
+        content: 'تم إلغاء التحدي بنجاح' + i.user.toString() + ' !\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||',
         embeds: [],
         components: [],
       });
@@ -2492,10 +2521,10 @@ async function gameButton(i, parts) {
     account(g.p1).coins -= g.bet;
     account(g.p2).coins -= g.bet;
     g.escrow = true;
-    g.status = 'playing';
+    g.status = g.mode === 'close' ? 'selecting' : 'playing';
     g.expires = Date.now() + CFG.gameMs;
     g.rolls = { [g.p1]: [], [g.p2]: [] };
-    if (g.mode === 'close') initializeApproximateGame(g);
+    if (g.mode === 'close') { g.approxMode = null; g.closeVisibility = 'natural'; }
     else if (g.mode === 'match') initMatchGame(g);
     else if (g.mode === 'sortnum') initSortGame(g);
     else if (g.mode === 'bombchips') { g.bombs = { [g.p1]: shuffleCasino([0,1,2,3,4,5,6,7,8]).slice(0,3), [g.p2]: shuffleCasino([0,1,2,3,4,5,6,7,8]).slice(0,3) }; g.bombRevealed=Array(9).fill(null);g.bombHits={[g.p1]:0,[g.p2]:0};g.turn=crypto.randomInt(2)?g.p1:g.p2; }
@@ -2538,13 +2567,16 @@ async function gameButton(i, parts) {
       return;
     }
     const range = action === 'low' ? g.closeRanges.low : g.closeRanges.high;
-    const number = crypto.randomInt(range[0], range[1] + 1);
-    g.closeNumbers[uid].push(number);
-    g.closeSums[uid] += number;
+    let number = crypto.randomInt(range[0], range[1] + 1);
+    if (g.approxMode === 'limit') number = Math.min(number, Math.max(0, g.closeMax - g.closeSums[uid]));
+    if (g.approxMode === 'descending') number = Math.min(number, Math.max(0, g.closeRemaining[uid]));
+    g.closeNumbers[uid].push(g.approxMode === 'descending' ? -number : number);
+    if (g.approxMode === 'descending') { g.closeRemaining[uid] = Math.max(0, g.closeRemaining[uid] - number); g.closeSums[uid] = g.closeRemaining[uid]; }
+    else g.closeSums[uid] += number;
     g.expires = Date.now() + 90000;
     await i.deferUpdate();
     const total = g.closeSums[uid];
-    if (total >= g.closeMax) {
+    if ((g.approxMode === 'descending' && g.closeRemaining[uid] === 0) || total >= g.closeMax) {
       await i.followUp({
         content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '** (المتبقي: **' + (g.closeMax - total) + '** )\n' +
           (total === g.closeMax ? 'ممتاز! وصلت إلى الرقم المستهدف تماماً وتم إنهاء دورك.' : 'تجاوزت الرقم المستهدف، وسيتم احتسابك حسب الأقرب إليه سواء أعلى أو أقل.'),
