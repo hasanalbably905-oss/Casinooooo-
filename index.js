@@ -2189,8 +2189,6 @@ client.on('messageCreate', async message => {
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
-    if (['عجلة', 'wheel', 'روليت'].includes(cmd)) return withLock('wheel:' + message.author.id, () => startWheel(message, amountOf(args[1])));
-    if (['بلاك', 'blackjack', 'بلاكجاك'].includes(cmd)) return startBlackjack(message, amountOf(args[1]));
     if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
       const handled = await privateRoomCommand(message, args);
       if (handled !== false) return handled;
@@ -2261,7 +2259,7 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس @عضو — عرض الرصيد\nيومي — مكافأة كل 24 ساعة\nعمل — عمل كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل مع تأكيد\nربط @عضو — ربط محفظتين بموافقة الطرف الثاني\nإيداع مبلغ / سحب مبلغ — نقل رصيد بين المحفظتين المرتبطتين\nفك @عضو — فصل الحساب المرتبط\ntax مبلغ / ضريبة مبلغ — حساب الضريبة\nhideme / unhideme — إخفاء أو إظهار رصيدك\nتحويلاتي — سجل تحويلاتك\nتوب — أعلى الأرصدة الظاهرة\nadd / اضافة @عضو مبلغ — إضافة رصيد للإدارة\nrmv / ازالة @عضو مبلغ — خصم رصيد للإدارة\nsetmoney @عضو مبلغ — تعيين الرصيد (الأونر فقط)\ntotalcoins / totalwithdraw — إحصائيات مالية للإدارة\nشحن مبلغ — شحن عبر ProBot\nwithdraw — لوحة طلب السحب\nسجل-اداري — سجل عمليات الإدارة\nعجلة مبلغ — عجلة الحظ (أصفر/أسود ×2، أخضر ×14)\nبلاك جاك مبلغ — لعبة بلاك جاك ضد الموزّع\nحجز روم — من لوحة الرومات الخاصة في روم الحجوزات\nرومي — تفاصيل رومك الخاصة\nadd @عضو / rem @عضو — إدارة أعضاء رومك\nسعر-الروم مبلغ — تغيير سعر الحجز (الأونرز فقط)')] });
+        'فلوس @عضو — عرض الرصيد\nيومي — مكافأة كل 24 ساعة\nعمل — عمل كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل مع تأكيد\nربط @عضو — ربط محفظتين بموافقة الطرف الثاني\nإيداع مبلغ / سحب مبلغ — نقل رصيد بين المحفظتين المرتبطتين\nفك @عضو — فصل الحساب المرتبط\ntax مبلغ / ضريبة مبلغ — حساب الضريبة\nhideme / unhideme — إخفاء أو إظهار رصيدك\nتحويلاتي — سجل تحويلاتك\nتوب — أعلى الأرصدة الظاهرة\nadd / اضافة @عضو مبلغ — إضافة رصيد للإدارة\nrmv / ازالة @عضو مبلغ — خصم رصيد للإدارة\nsetmoney @عضو مبلغ — تعيين الرصيد (الأونر فقط)\ntotalcoins / totalwithdraw — إحصائيات مالية للإدارة\nشحن مبلغ — شحن عبر ProBot\nwithdraw — لوحة طلب السحب\nسجل-اداري — سجل عمليات الإدارة\nحجز روم — من لوحة الرومات الخاصة في روم الحجوزات\nرومي — تفاصيل رومك الخاصة\nadd @عضو / rem @عضو — إدارة أعضاء رومك\nسعر-الروم مبلغ — تغيير سعر الحجز (الأونرز فقط)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
