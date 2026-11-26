@@ -125,9 +125,9 @@ class JsonQuery {
 }
 function project(doc, spec) {
   if (!spec) return doc;
-  const raw = typeof spec === 'string' ? spec.split(/\\s+/).filter(Boolean) : Object.keys(spec);
+  const raw = typeof spec === 'string' ? spec.split(/\s+/).filter(Boolean) : Object.keys(spec);
   const excluded = raw.filter(k => k.startsWith('-') || (typeof spec === 'object' && spec[k] === 0)).map(k => k.replace(/^-/, ''));
-  const included = raw.filter(k => !k.startsWith('-') && (typeof spec === 'string' || spec[k])).map(k => k.replace(/^\\+/, ''));
+  const included = raw.filter(k => !k.startsWith('-') && (typeof spec === 'string' || spec[k])).map(k => k.replace(/^\+/, ''));
   if (!included.length && excluded.length) {
     const out = clone(doc);
     for (const field of excluded) unsetPath(out, field);
