@@ -993,18 +993,18 @@ function gameRows(g) {
   )];
   if (g.status === 'playing' && g.mode === 'xo') {
     const board = g.board || Array(9).fill(null);
-    return [0, 1, 2].map(row => new ActionRowBuilder().addComponents(
-      [0, 1, 2].map(col => {
+    return [0, 1, 2].map(row => {
+      const buttons = [0, 1, 2].map(col => {
         const cell = row * 3 + col;
         const value = board[cell];
-        const button = new ButtonBuilder()
+        return new ButtonBuilder()
           .setCustomId('g:xo:' + cell + ':' + g.id)
           .setLabel(value || String(cell + 1))
           .setStyle(value === 'X' ? ButtonStyle.Danger : value === 'O' ? ButtonStyle.Success : ButtonStyle.Secondary)
           .setDisabled(Boolean(value));
-        return button;
-      })
-    ));
+      });
+      return new ActionRowBuilder().addComponents(...buttons);
+    });
   }
   return [];
 }
