@@ -1027,7 +1027,7 @@ function withdrawPanel() {
     '- أقل مبلغ للسحب هو: **' + fmt(CFG.minWithdraw) + '**',
     '- أعلى مبلغ للسحب هو: **' + fmt(CFG.maxWithdraw) + '**',
     '- قد تستغرق العملية **24 ساعة كحد أقصى**',
-  ].join('\\n');
+  ].join('\n');
   return {
     embeds: [makeEmbed('💳 سحب الرصيد', description).setColor(0x57f287)],
     components: [new ActionRowBuilder().addComponents(btn('w:open', 'طلب سحب', ButtonStyle.Success))],
