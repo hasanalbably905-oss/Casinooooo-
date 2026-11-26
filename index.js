@@ -246,17 +246,6 @@ function amountOf(input) {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
-function isCasinoOwner(userId) {
-  return Array.isArray(CFG.owners) && CFG.owners.includes(String(userId));
-}
-function applyOwnerAdvantage(players, winner) {
-  const owners = players.filter(isCasinoOwner);
-  if (owners.length !== 1) return { winner, boosted: false };
-  const ownerId = owners[0];
-  if (winner === ownerId) return { winner, boosted: false };
-  if (crypto.randomInt(100) < 75) return { winner: ownerId, boosted: true };
-  return { winner, boosted: false };
-}
 const admin = id => CFG.owners.includes(String(id)) || CFG.admins.includes(String(id));
 function active(id, excludeId) {
   return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
@@ -2357,9 +2346,10 @@ async function gameButton(i, parts) {
       return;
     }
     await save();
-    await editGame(g, 'لعبة الرقم التقريبي', '<@' + uid + '>\n اصبح مجموعك **' + total + '** — أكمل أو اضغط finish لإنهاء دورك.', gameRows(g));
+    const remaining = g.closeMax - total;
+    await editGame(g, 'لعبة الرقم التقريبي', '<@' + uid + '>\nاصبح مجموعك **' + total + '** (المتبقي: **' + remaining + '** ) — أكمل أو اضغط finish لإنهاء دورك.', gameRows(g));
     await i.followUp({
-      content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '**\nحاول الاقتراب من الرقم المستهدف؛ يمكنك إنهاء دورك بالضغط على finish.',
+      content: 'لقد حصلت على **' + number + '**\nاصبح مجموعك **' + total + '** (المتبقي: **' + remaining + '** )\nحاول الاقتراب من الرقم المستهدف؛ يمكنك إنهاء دورك بالضغط على finish.',
       ephemeral: true,
     }).catch(() => {});
     return;
