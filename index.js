@@ -1555,6 +1555,17 @@ async function privateRoomCommand(message, args) {
     await save();
     return message.reply('🔊 تم السماح لـ ' + user + ' بالكتابة مجدداً.');
   }
+  if (['rename', 'تسمية', 'اسم'].includes(cmd)) {
+    const name = args.slice(1).join('-').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff-]/g, '').replace(/-+/g, '-').slice(0, 80);
+    if (!name) return message.reply('الاستخدام: `rename اسم-الروم`');
+    await message.channel.setName('🎰｜' + name).catch(() => null);
+    return message.reply('✅ تم تحديث اسم الروم.');
+  }
+  if (['اعضاء-الروم', 'roommembers'].includes(cmd)) {
+    const ids = [...new Set([current.owner, ...(current.addedMembers || [])])];
+    return message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('👥 أعضاء الروم الخاصة')
+      .setDescription(ids.map((id, index) => (index + 1) + '. <@' + id + '>' + (id === current.owner ? ' — صاحب الروم' : '')).join('\n'))] });
+  }
   return false;
 }
 async function challenge(message, args) {
@@ -2356,6 +2367,42 @@ client.on('messageCreate', async message => {
     if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة', 'hide', 'اخفاء', 'إخفاء', 'show', 'اظهار', 'إظهار', 'unallow', 'منع', 'reallow', 'سماح'].includes(cmd)) {
       const handled = await privateRoomCommand(message, args);
       if (handled !== false) return handled;
+    }
+    if (['!post', '!roompanel'].includes(cmd)) {
+      if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
+      await ensurePrivateRoomPanel();
+      return message.reply('✅ تم تحديث لوحة حجز الرومات في روم الحجوزات المحددة بالإعدادات.');
+    }
+    if (['!setpr', '!سعر-الروم'].includes(cmd)) {
+      if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
+      const price = amountOf(args[1]);
+      if (!price) return message.reply('الاستخدام: `!setpr 5000000` أو `سعر-الروم 5m`');
+      db.settings.privateRoomPrice = price;
+      await save();
+      await refreshPrivateRoomPanel();
+      return message.reply('✅ تم تغيير سعر الروم إلى **' + fmt(price) + '** كوين وتحديث اللوحة.');
+    }
+    if (['!rstroomhere', '!حذف-رومي'].includes(cmd)) {
+      const room = db.privateRooms[message.channel.id];
+      if (!room || room.status !== 'active') return message.reply('هذا الأمر يعمل داخل روم خاصة نشطة فقط.');
+      if (room.owner !== message.author.id && !CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر لصاحب الروم أو الأونرز فقط.');
+      await expirePrivateRoom(room);
+      return message.reply('✅ تم إنهاء الروم وتحرير الحجز.');
+    }
+    if (cmd === '!rooms' || cmd === 'الرومات') {
+      if (!admin(message.author.id)) return message.reply('هذا الأمر للإدارة فقط.');
+      const rooms = activePrivateRooms();
+      const body = rooms.length ? rooms.map((room, index) => (index + 1) + '. <#' + room.channelId + '> — <@' + room.owner + '> — تنتهي <t:' + Math.floor(room.expiresAt / 1000) + ':R>').join('\n') : 'لا توجد رومات محجوزة حالياً.';
+      return message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🏠 الرومات الخاصة النشطة')
+        .setDescription(body + '\n\nالسعر الحالي: **' + fmt(privateRoomPrice()) + '** كوين\nالمتاح: **' + Math.max(0, 5 - rooms.length) + '/5**')] });
+    }
+    if (cmd === '!rstroom') {
+      if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
+      if (args[1] !== 'تأكيد') return message.reply('⚠️ هذا الأمر سيحذف كل الرومات الخاصة النشطة. للتأكيد اكتب: `!rstroom تأكيد`');
+      const rooms = activePrivateRooms();
+      for (const room of rooms) await expirePrivateRoom(room);
+      await refreshPrivateRoomPanel();
+      return message.reply('✅ تم إنهاء ' + rooms.length + ' روم خاصة وتحديث لوحة الحجز.');
     }
     if (cmd === 'سعر-الروم') {
       if (!CFG.owners.includes(message.author.id)) return message.reply('هذا الأمر للأونرز فقط.');
