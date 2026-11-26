@@ -1183,16 +1183,15 @@ async function startBotChallenge(message, amount) {
   await save();
   const menu = new StringSelectMenuBuilder()
     .setCustomId('bot-challenge:' + id)
-    .setPlaceholder('🎮 اختر اللعبة التي تريد تحدي البوت بها')
+    .setPlaceholder('🔽 اختر اللعبة')
     .setMinValues(1).setMaxValues(1)
     .addOptions(
       { label: 'بلاك جاك ضد البوت', value: 'blackjack', description: 'العب أوراقك ضد الموزّع', emoji: '🃏' },
-      { label: 'عجلة الحظ ضد البوت', value: 'wheel', description: 'اختر لوناً واختبر حظك', emoji: '🎡' },
+      { label: 'عجلة الحظ', value: 'wheel', description: 'اختر لوناً ودع العجلة تحدد النتيجة', emoji: '🎡' },
+      { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'إلغاء التحدي بدون خصم الرهان', emoji: '🚫' },
     );
   const sent = await message.reply({
-    embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🤖 تحدي البوت')
-      .setDescription('**الرهان:** ' + fmt(amount) + ' كوين\n\nاختر لعبة من القائمة لبدء التحدي ضد البوت.')
-      .setFooter({ text: 'Golden Casino • Bot Challenge' }).setTimestamp()],
+    content: '🔥 | **تحدي بوت جديد!**\\n💰 **المبلغ المحدد:** \`' + fmt(amount) + '\` كوين\\n\\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
     components: [new ActionRowBuilder().addComponents(menu)],
   }).catch(() => null);
   if (!sent) {
@@ -1214,6 +1213,12 @@ async function botChallengeSelect(i) {
     return i.update({ content: '⌛ انتهت مهلة اختيار اللعبة. ابدأ تحدياً جديداً.', embeds: [], components: [] });
   }
   const selected = i.values[0];
+  if (selected === 'cancel_challenge') {
+    challenge.status = 'cancelled';
+    challenge.cancelledAt = Date.now();
+    await save();
+    return i.update({ content: '❌ | **تم إلغاء تحدي البوت. لم يتم خصم أي مبلغ.**', embeds: [], components: [] });
+  }
   if (!['blackjack', 'wheel'].includes(selected)) return ephemeral(i, 'اللعبة المختارة غير متاحة حالياً.');
   const wallet = account(challenge.userId);
   if (wallet.coins < challenge.stake) {
