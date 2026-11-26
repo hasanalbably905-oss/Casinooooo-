@@ -1109,8 +1109,8 @@ async function blackjackButton(i) {
   if (action === 'hit') {
     game.player.push(game.deck.pop());
     const score = blackjackScore(game.player);
-    if (score > 21) return finishBlackjack(game, 'loss');
-    if (score === 21) return blackjackStand(game);
+    if (score > 21) { await i.deferUpdate(); return finishBlackjack(game, 'loss'); }
+    if (score === 21) { await i.deferUpdate(); return blackjackStand(game); }
     game.expiresAt = Date.now() + 90000;
     await save();
     return i.update({ embeds: [blackjackEmbed(game)], components: blackjackRow(game) });
