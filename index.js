@@ -168,8 +168,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -936,6 +936,70 @@ async function adminBalance(message, args, add) {
     );
   return message.reply({ embeds: [embed] });
 }
+function activeTournament() {
+  return Object.values(db.tournaments || {}).find(item => item && item.status === 'active') || null;
+}
+async function refreshTournamentBoard(tournament) {
+  const channel = await client.channels.fetch(CFG.tournamentRoom).catch(() => null);
+  if (!channel || !channel.isTextBased()) return;
+  const entries = Object.entries(tournament.participants || {})
+    .sort((a, b) => Number(b[1].wageredAmount || 0) - Number(a[1].wageredAmount || 0))
+    .slice(0, 10);
+  const description = entries.length
+    ? entries.map(([id, data], index) => (index === 0 ? '🏆' : '**#' + (index + 1) + '**') + ' <@' + id + '> — **' + fmt(data.wageredAmount) + '**').join('\n')
+    : 'لا يوجد مشاركون حتى الآن.';
+  const embed = new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 ترتيب البطولة')
+    .setDescription(description)
+    .setFooter({ text: 'Golden Casino • البطولة' }).setTimestamp();
+  if (tournament.messageId) {
+    const oldMessage = await channel.messages.fetch(tournament.messageId).catch(() => null);
+    if (oldMessage) { await oldMessage.edit({ embeds: [embed] }).catch(() => {}); return; }
+  }
+  const sent = await channel.send({ embeds: [embed] }).catch(() => null);
+  if (sent) { tournament.messageId = sent.id; await save(); }
+}
+async function trackTournamentBet(userId, amount) {
+  const tournament = activeTournament();
+  if (!tournament || tournament.endsAt <= Date.now()) return;
+  if (!tournament.participants) tournament.participants = {};
+  const row = tournament.participants[String(userId)] || { wageredAmount: 0 };
+  row.wageredAmount = Math.min(Number.MAX_SAFE_INTEGER, (Number(row.wageredAmount) || 0) + amount);
+  tournament.participants[String(userId)] = row;
+  await save();
+  await refreshTournamentBoard(tournament);
+}
+async function finishTournament(tournament, cancelled = false) {
+  if (!tournament || tournament.status !== 'active') return;
+  tournament.status = cancelled ? 'cancelled' : 'finished';
+  tournament.finishedAt = Date.now();
+  const ranking = Object.entries(tournament.participants || {})
+    .sort((a, b) => Number(b[1].wageredAmount || 0) - Number(a[1].wageredAmount || 0));
+  const awards = [];
+  if (!cancelled) {
+    for (let index = 0; index < Math.min(10, ranking.length); index++) {
+      const prize = index === 0 ? tournament.prizes.first
+        : index === 1 ? tournament.prizes.second
+        : index === 2 ? tournament.prizes.third
+        : tournament.prizes.top10;
+      const [userId] = ranking[index];
+      const wallet = account(userId);
+      if (Number.isSafeInteger(prize) && prize > 0 && canAddCoins(wallet, prize)) {
+        wallet.coins += prize;
+        awards.push({ userId, prize, place: index + 1 });
+      }
+    }
+  }
+  tournament.awards = awards;
+  await save();
+  const channel = await client.channels.fetch(CFG.tournamentRoom).catch(() => null);
+  if (channel?.isTextBased()) {
+    const result = cancelled ? 'تم إلغاء البطولة دون توزيع الجوائز.' :
+      (awards.length ? awards.map(x => '**#' + x.place + '** <@' + x.userId + '> — **' + fmt(x.prize) + '** كوين').join('\n') : 'انتهت البطولة دون مشاركين مستحقين للجوائز.');
+    await channel.send({ embeds: [new EmbedBuilder().setColor(cancelled ? 0xed4245 : 0x2ecc71)
+      .setTitle(cancelled ? 'تم إلغاء البطولة' : '🏆 انتهت البطولة')
+      .setDescription(result).setTimestamp()] }).catch(() => {});
+  }
+}
 async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
   const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
@@ -1150,6 +1214,9 @@ async function refund(g, reason) {
 }
 async function sweep() {
   const now = Date.now();
+  for (const tournament of Object.values(db.tournaments || {})) {
+    if (tournament && tournament.status === 'active' && Number(tournament.endsAt) <= now) await finishTournament(tournament);
+  }
   for (const g of Object.values(db.games)) {
     if (!g || !g.expires || g.expires > now) continue;
     if (g.status === 'pending' || g.status === 'awaiting_accept') {
@@ -1274,6 +1341,8 @@ async function gameButton(i, parts) {
       g.turn = null;
     } else g.turn = crypto.randomInt(2) === 0 ? g.p1 : g.p2;
     await save();
+    await trackTournamentBet(g.p1, g.bet);
+    await trackTournamentBet(g.p2, g.bet);
     await i.deferReply({ ephemeral: true });
     await i.editReply({
       content: '> تم قبول التحدي: ' + (g.mode === 'dice' ? 'النرد' : g.mode === 'close' ? 'الرقم التقريبي' : g.mode === 'xo' ? 'أكس أو' : 'حجرة ورقة مقص') + ' مع <@' + g.p1 + '>.',
@@ -1683,6 +1752,46 @@ client.on('messageCreate', async message => {
       const total = approved.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
+    }
+    if (cmd === '!competition') {
+      if (!CFG.owners.includes(String(message.author.id))) return message.reply('❌ هذا الأمر للأونرز فقط.');
+      if (activeTournament()) return message.reply('توجد بطولة نشطة بالفعل. ألغها أولاً باستخدام `!cancelcompetition`.');
+      const days = Number(String(args[1] || '').replace(/[^0-9]/g, ''));
+      const top10 = amountOf(args[2]), first = amountOf(args[3]), second = amountOf(args[4]), third = amountOf(args[5]);
+      if (!Number.isInteger(days) || days < 1 || days > 30 || !top10 || !first || !second || !third) {
+        return message.reply('الاستخدام: `!competition 2d 100m 500m 1000m 3000m`\nالترتيب: مدة البطولة، جائزة المراكز 4-10، الأول، الثاني، الثالث.');
+      }
+      const tournament = {
+        id: crypto.randomUUID().replace(/-/g, '').slice(0, 16),
+        status: 'active', startsAt: Date.now(), endsAt: Date.now() + days * 86400000,
+        prizes: { top10, first, second, third }, participants: {}, messageId: null,
+      };
+      db.tournaments[tournament.id] = tournament;
+      const channel = await client.channels.fetch(CFG.tournamentRoom).catch(() => null);
+      if (!channel || !channel.isTextBased()) { delete db.tournaments[tournament.id]; return message.reply('روم البطولة غير متاح. تحقق من TOURNAMENT_ROOM_ID.'); }
+      const embed = new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 بطولة Golden Casino')
+        .setDescription('**المدة:** ' + days + ' يوم\n**المركز الأول:** ' + fmt(first) + '\n**المركز الثاني:** ' + fmt(second) +
+          '\n**المركز الثالث:** ' + fmt(third) + '\n**المراكز 4-10:** ' + fmt(top10) + ' لكل مركز\n\nتنتهي <t:' + Math.floor(tournament.endsAt / 1000) + ':R>.')
+        .setFooter({ text: 'يتم احتساب نقاط البطولة من رهانات التحديات المقبولة.' }).setTimestamp();
+      const announcement = await channel.send({ embeds: [embed] }).catch(() => null);
+      if (!announcement) { delete db.tournaments[tournament.id]; return message.reply('تعذر نشر إعلان البطولة.'); }
+      tournament.announcementId = announcement.id;
+      await save();
+      await refreshTournamentBoard(tournament);
+      return message.reply('✅ تم إنشاء البطولة ونشرها في روم البطولات.');
+    }
+    if (cmd === '!cancelcompetition') {
+      if (!CFG.owners.includes(String(message.author.id))) return message.reply('❌ هذا الأمر للأونرز فقط.');
+      const tournament = activeTournament();
+      if (!tournament) return message.reply('لا توجد بطولة نشطة حالياً.');
+      await finishTournament(tournament, true);
+      return message.reply('تم إلغاء البطولة.');
+    }
+    if (cmd === 'توب-البطولة') {
+      const tournament = activeTournament();
+      if (!tournament) return message.reply('لا توجد بطولة نشطة حالياً.');
+      await refreshTournamentBoard(tournament);
+      return message.reply('تم تحديث ترتيب البطولة في روم البطولات.');
     }
     if (cmd === 'setmoney') {
       if (!CFG.owners.includes(String(message.author.id))) return message.reply('هذا الأمر للأونرز فقط.');
