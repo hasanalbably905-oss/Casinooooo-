@@ -1509,6 +1509,22 @@ async function botMiniGameButton(i) {
   if(!challenge||challenge.status!=='playing')return ephemeral(i,'هذه الجولة انتهت أو لم تعد متاحة.');
   if(i.user.id!==challenge.userId)return ephemeral(i,'هذه الجولة ليست لك.');
   if(Date.now()>=challenge.expiresAt){
+    if(challenge.mode==='find_ball'){
+      await i.deferUpdate();
+      await settleGoldenBotGame(challenge,'loss','⌛ انتهى وقت اختيار الكوب؛ فاز البوت.');
+      return;
+    }
+    if(challenge.mode==='dice_normal'||challenge.mode==='dice_reverse'){
+      await i.deferUpdate();
+      challenge.playerRolls=challenge.playerRolls||[];
+      while(challenge.playerRolls.length<3)challenge.playerRolls.push(crypto.randomInt(1,7));
+      const reverse=challenge.mode==='dice_reverse';
+      const botRolls=Array.from({length:3},()=>reverse?(crypto.randomInt(100)<87?crypto.randomInt(1,4):crypto.randomInt(1,7)):(crypto.randomInt(100)<87?crypto.randomInt(4,7):crypto.randomInt(1,7)));
+      const a=challenge.playerRolls.reduce((x,y)=>x+y,0),b=botRolls.reduce((x,y)=>x+y,0);
+      const outcome=a===b?'draw':reverse?(a<b?'win':'loss'):(a>b?'win':'loss');
+      await settleGoldenBotGame(challenge,outcome,'رمياتك: **'+challenge.playerRolls.join(' + ')+' = '+a+'**\\nرميات البوت: **'+botRolls.join(' + ')+' = '+b+'**');
+      return;
+    }
     challenge.status='expired';await save();
     return i.update({content:'⌛ انتهى الوقت؛ لم يتم احتساب نتيجة جديدة.',embeds:[],components:[]});
   }
