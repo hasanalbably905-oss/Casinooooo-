@@ -171,8 +171,8 @@ function importOldUsers() {
 }
 const old = readJson(FILE, null);
 const db = old && typeof old === 'object'
-  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
-  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, settings: {}, adminLogs: [] };
+  ? { users: old.users || importOldUsers(), games: old.games || {}, withdrawals: old.withdrawals || {}, processedTransfers: old.processedTransfers || {}, creditReviews: old.creditReviews || {}, transfers: old.transfers || {}, linkRequests: old.linkRequests || {}, linkedAccounts: old.linkedAccounts || {}, linkCooldowns: old.linkCooldowns || {}, linkedWithdrawals: old.linkedWithdrawals || {}, tournaments: old.tournaments || {}, privateRooms: old.privateRooms || {}, blackjack: old.blackjack || {}, settings: old.settings || {}, adminLogs: old.adminLogs || [] }
+  : { users: importOldUsers(), games: {}, withdrawals: {}, processedTransfers: {}, creditReviews: {}, transfers: {}, linkRequests: {}, linkedAccounts: {}, linkCooldowns: {}, linkedWithdrawals: {}, tournaments: {}, privateRooms: {}, blackjack: {}, settings: {}, adminLogs: [] };
 
 let writeChain = Promise.resolve();
 
@@ -1003,6 +1003,135 @@ async function finishTournament(tournament, cancelled = false) {
       .setDescription(result).setTimestamp()] }).catch(() => {});
   }
 }
+const BLACKJACK_SUITS = ['♠️', '♥️', '♦️', '♣️'];
+const BLACKJACK_RANKS = [
+  { rank: 'A', value: 11 }, { rank: '2', value: 2 }, { rank: '3', value: 3 },
+  { rank: '4', value: 4 }, { rank: '5', value: 5 }, { rank: '6', value: 6 },
+  { rank: '7', value: 7 }, { rank: '8', value: 8 }, { rank: '9', value: 9 },
+  { rank: '10', value: 10 }, { rank: 'J', value: 10 }, { rank: 'Q', value: 10 }, { rank: 'K', value: 10 },
+];
+function blackjackDeck() {
+  const deck = BLACKJACK_SUITS.flatMap(suit => BLACKJACK_RANKS.map(card => ({ ...card, suit })));
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+function blackjackScore(hand) {
+  let score = hand.reduce((sum, card) => sum + card.value, 0);
+  let aces = hand.filter(card => card.rank === 'A').length;
+  while (score > 21 && aces > 0) { score -= 10; aces--; }
+  return score;
+}
+function blackjackCards(hand) {
+  return hand.map(card => card.rank + card.suit).join('  ');
+}
+function blackjackEmbed(game, revealDealer = false, headline = '🃏 بلاك جاك') {
+  const dealerHand = revealDealer ? blackjackCards(game.dealer) : game.dealer[0].rank + game.dealer[0].suit + '  🂠';
+  const dealerScore = revealDealer ? '\nالمجموع: **' + blackjackScore(game.dealer) + '**' : '';
+  return new EmbedBuilder().setColor(0x1f8b4c).setTitle(headline)
+    .setDescription(
+      '**اللاعب <@' + game.userId + '>**\n' + blackjackCards(game.player) +
+      '\nالمجموع: **' + blackjackScore(game.player) + '**\n\n' +
+      '**الموزّع**\n' + dealerHand + dealerScore +
+      '\n\nالرهان الحالي: **' + fmt(game.stake) + '** كوين'
+    ).setFooter({ text: 'Golden Casino • Blackjack' }).setTimestamp();
+}
+function blackjackRow(game) {
+  if (game.status !== 'playing') return [];
+  return [new ActionRowBuilder().addComponents(
+    btn('bj:hit:' + game.id, 'سحب ورقة', ButtonStyle.Primary),
+    btn('bj:stand:' + game.id, 'تثبيت', ButtonStyle.Success),
+    btn('bj:double:' + game.id, 'مضاعفة الرهان', ButtonStyle.Danger, game.doubled || game.player.length !== 2),
+  )];
+}
+async function finishBlackjack(game, outcome) {
+  if (!game || game.status !== 'playing') return;
+  game.status = outcome;
+  game.finishedAt = Date.now();
+  const wallet = account(game.userId);
+  let payout = 0;
+  if (outcome === 'win') payout = game.natural ? Math.floor(game.stake * 2.5) : game.stake * 2;
+  else if (outcome === 'draw' || outcome === 'expired') payout = game.stake;
+  if (payout > 0 && canAddCoins(wallet, payout)) wallet.coins += payout;
+  else if (payout > 0) { game.status = 'refunded'; payout = game.stake; wallet.coins += payout; }
+  game.payout = payout;
+  await save();
+  const channel = await client.channels.fetch(game.channelId).catch(() => null);
+  const msg = channel?.isTextBased() ? await channel.messages.fetch(game.messageId).catch(() => null) : null;
+  const result = outcome === 'win' ? '🎉 فزت! استلمت **' + fmt(payout) + '** كوين.'
+    : outcome === 'draw' ? '🤝 تعادل! تمت إعادة **' + fmt(payout) + '** كوين.'
+    : outcome === 'expired' ? '⌛ انتهى الوقت؛ تمت إعادة رهانك.'
+    : outcome === 'refunded' ? 'تمت إعادة الرهان لحماية رصيدك من تجاوز الحد الأعلى.'
+    : 'خسرت الجولة. لم يتم إرجاع الرهان.';
+  if (msg) await msg.edit({ embeds: [blackjackEmbed(game, true, '🃏 انتهت جولة بلاك جاك').setDescription(
+    blackjackEmbed(game, true).data.description + '\n\n' + result
+  )], components: [] }).catch(() => {});
+}
+async function blackjackStand(game) {
+  while (blackjackScore(game.dealer) < 17) game.dealer.push(game.deck.pop());
+  const player = blackjackScore(game.player), dealer = blackjackScore(game.dealer);
+  const outcome = dealer > 21 || player > dealer ? 'win' : player === dealer ? 'draw' : 'loss';
+  return finishBlackjack(game, outcome);
+}
+async function startBlackjack(message, amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) return message.reply('الاستخدام: بلاك جاك 100k');
+  const wallet = account(message.author.id);
+  if (wallet.coins < amount) return message.reply('رصيدك غير كافٍ لهذه الجولة.');
+  if (active(message.author.id)) return message.reply('لا يمكنك بدء بلاك جاك أثناء وجودك في تحدٍ آخر.');
+  if (Object.values(db.blackjack).some(game => game && game.userId === message.author.id && game.status === 'playing')) return message.reply('لديك جولة بلاك جاك نشطة بالفعل.');
+  wallet.coins -= amount;
+  const deck = blackjackDeck();
+  const game = {
+    id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+    userId: message.author.id, channelId: message.channel.id, status: 'playing',
+    stake: amount, doubled: false, deck, player: [deck.pop(), deck.pop()],
+    dealer: [deck.pop(), deck.pop()], createdAt: Date.now(), expiresAt: Date.now() + 90000,
+  };
+  game.natural = blackjackScore(game.player) === 21;
+  db.blackjack[game.id] = game;
+  await save();
+  const sent = await message.reply({ embeds: [blackjackEmbed(game)], components: blackjackRow(game) });
+  game.messageId = sent.id;
+  await save();
+  if (game.natural) await blackjackStand(game);
+}
+async function blackjackButton(i) {
+  const [, action, id] = i.customId.split(':');
+  const game = db.blackjack[id];
+  if (!game || game.status !== 'playing') return ephemeral(i, 'هذه الجولة انتهت أو لم تعد متاحة.');
+  if (i.user.id !== game.userId) return ephemeral(i, 'هذه الجولة ليست لك.');
+  if (Date.now() >= game.expiresAt) {
+    await finishBlackjack(game, 'expired');
+    return ephemeral(i, 'انتهى وقت الجولة وتمت إعادة الرهان.');
+  }
+  if (action === 'hit') {
+    game.player.push(game.deck.pop());
+    const score = blackjackScore(game.player);
+    if (score > 21) return finishBlackjack(game, 'loss');
+    if (score === 21) return blackjackStand(game);
+    game.expiresAt = Date.now() + 90000;
+    await save();
+    return i.update({ embeds: [blackjackEmbed(game)], components: blackjackRow(game) });
+  }
+  if (action === 'stand') {
+    await i.deferUpdate();
+    return blackjackStand(game);
+  }
+  if (action === 'double') {
+    if (game.doubled || game.player.length !== 2) return ephemeral(i, 'المضاعفة متاحة مرة واحدة وفي أول دور فقط.');
+    const wallet = account(game.userId);
+    if (wallet.coins < game.stake) return ephemeral(i, 'رصيدك لا يكفي لمضاعفة الرهان.');
+    wallet.coins -= game.stake;
+    game.stake *= 2;
+    game.doubled = true;
+    game.player.push(game.deck.pop());
+    await i.deferUpdate();
+    if (blackjackScore(game.player) > 21) return finishBlackjack(game, 'loss');
+    return blackjackStand(game);
+  }
+}
 function privateRoomPrice() {
   const value = Number(db.settings.privateRoomPrice ?? CFG.rentPrice);
   return Number.isSafeInteger(value) && value > 0 ? value : CFG.rentPrice;
@@ -1342,6 +1471,9 @@ async function sweep() {
   const now = Date.now();
   for (const tournament of Object.values(db.tournaments || {})) {
     if (tournament && tournament.status === 'active' && Number(tournament.endsAt) <= now) await finishTournament(tournament);
+  }
+  for (const game of Object.values(db.blackjack || {})) {
+    if (game && game.status === 'playing' && Number(game.expiresAt) <= now) await finishBlackjack(game, 'expired');
   }
   for (const room of Object.values(db.privateRooms || {})) {
     if (room && room.status === 'active' && Number(room.expiresAt) <= now) await expirePrivateRoom(room);
@@ -1882,6 +2014,7 @@ client.on('messageCreate', async message => {
       return message.reply({ embeds: [makeEmbed('📤 إحصائيات السحوبات',
         'إجمالي السحوبات المقبولة والمسجلة: **' + fmt(total) + '** كوين\nعدد الطلبات المقبولة: **' + fmt(approved.length) + '**\nالطلبات المعلقة: **' + fmt(rows.filter(row => row && row.status === 'pending').length) + '**').setColor(0x3498db)] });
     }
+    if (['بلاك', 'blackjack', 'بلاكجاك'].includes(cmd)) return startBlackjack(message, amountOf(args[1]));
     if (cmd === 'رومي' || ['add', 'اضافة', 'إضافة', 'rem', 'remove', 'حذف', 'ازالة', 'إزالة'].includes(cmd)) {
       const handled = await privateRoomCommand(message, args);
       if (handled !== false) return handled;
@@ -1952,7 +2085,7 @@ client.on('messageCreate', async message => {
     if (['تحدي', 'challenge'].includes(cmd)) return challenge(message, args);
     if (['مساعدة', 'help'].includes(cmd)) {
       return message.reply({ embeds: [makeEmbed('أوامر Batoot Casino',
-        'فلوس @عضو — عرض الرصيد\nيومي — مكافأة كل 24 ساعة\nعمل — عمل كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل مع تأكيد\nربط @عضو — ربط محفظتين بموافقة الطرف الثاني\nإيداع مبلغ / سحب مبلغ — نقل رصيد بين المحفظتين المرتبطتين\nفك @عضو — فصل الحساب المرتبط\ntax مبلغ / ضريبة مبلغ — حساب الضريبة\nhideme / unhideme — إخفاء أو إظهار رصيدك\nتحويلاتي — سجل تحويلاتك\nتوب — أعلى الأرصدة الظاهرة\nadd / اضافة @عضو مبلغ — إضافة رصيد للإدارة\nrmv / ازالة @عضو مبلغ — خصم رصيد للإدارة\nsetmoney @عضو مبلغ — تعيين الرصيد (الأونر فقط)\ntotalcoins / totalwithdraw — إحصائيات مالية للإدارة\nشحن مبلغ — شحن عبر ProBot\nwithdraw — لوحة طلب السحب\nسجل-اداري — سجل عمليات الإدارة\nحجز روم — من لوحة الرومات الخاصة في روم الحجوزات\nرومي — تفاصيل رومك الخاصة\nadd @عضو / rem @عضو — إدارة أعضاء رومك\nسعر-الروم مبلغ — تغيير سعر الحجز (الأونرز فقط)')] });
+        'فلوس @عضو — عرض الرصيد\nيومي — مكافأة كل 24 ساعة\nعمل — عمل كل ساعة\nملفي — عرض ملفك وإحصائياتك\nتحويل @عضو مبلغ — تحويل مع تأكيد\nربط @عضو — ربط محفظتين بموافقة الطرف الثاني\nإيداع مبلغ / سحب مبلغ — نقل رصيد بين المحفظتين المرتبطتين\nفك @عضو — فصل الحساب المرتبط\ntax مبلغ / ضريبة مبلغ — حساب الضريبة\nhideme / unhideme — إخفاء أو إظهار رصيدك\nتحويلاتي — سجل تحويلاتك\nتوب — أعلى الأرصدة الظاهرة\nadd / اضافة @عضو مبلغ — إضافة رصيد للإدارة\nrmv / ازالة @عضو مبلغ — خصم رصيد للإدارة\nsetmoney @عضو مبلغ — تعيين الرصيد (الأونر فقط)\ntotalcoins / totalwithdraw — إحصائيات مالية للإدارة\nشحن مبلغ — شحن عبر ProBot\nwithdraw — لوحة طلب السحب\nسجل-اداري — سجل عمليات الإدارة\nبلاك جاك مبلغ — لعبة بلاك جاك ضد الموزّع\nحجز روم — من لوحة الرومات الخاصة في روم الحجوزات\nرومي — تفاصيل رومك الخاصة\nadd @عضو / rem @عضو — إدارة أعضاء رومك\nسعر-الروم مبلغ — تغيير سعر الحجز (الأونرز فقط)')] });
     }
   } catch (error) {
     console.error('messageCreate:', error);
@@ -1988,6 +2121,7 @@ client.on('interactionCreate', async i => {
     const parts = i.customId.split(':');
     const family = parts[0];
     if (i.customId === 'r:buy') return withLock('private-room-buy:' + i.user.id, () => buyPrivateRoom(i));
+    if (i.customId.startsWith('bj:')) return withLock('blackjack:' + i.customId.split(':')[2], () => blackjackButton(i));
     if (!['t', 'c', 'g', 'w', 'l'].includes(family)) return;
     // Lock by the underlying request/game ID, not by button action. A confirm,
     // reject, roll, or duplicate click on the same object cannot race another.
