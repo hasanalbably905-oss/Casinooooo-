@@ -2270,14 +2270,14 @@ client.on('messageCreate', async message => {
     if (await handleGoldenExtras(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '', suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID || '' })) return;
     if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '' })) return;
     if (await handleGoldenCatalog(message, { ownerId: CFG.owner, ownerIds: CFG.owners })) return;
-    if (cmd === 'ربط') return requestAccountLink(message, args);
+    if (cmd === 'ربط') return withLock('link-request:' + message.author.id, () => requestAccountLink(message, args));
     if (cmd === 'سحب') return withLock('linked-withdraw:' + message.author.id, () => requestLinkedWithdrawal(message, args));
     if (cmd === 'إيداع' || cmd === 'ايداع') {
       const partnerId = linkedTo(message.author.id);
       const lockKey = 'linked-deposit:' + [message.author.id, partnerId || 'none'].sort().join(':');
       return withLock(lockKey, () => depositToLinkedPartner(message, args));
     }
-    if (cmd === 'فصل') return unlinkAccounts(message, args);
+    if (cmd === 'فصل') return withLock('link-unlink:' + message.author.id, () => unlinkAccounts(message, args));
     if (['تحويل', 'transfer', 'pay'].includes(cmd)) return createMemberTransfer(message, args);
     if (cmd === 'شحن') {
       const parsed = legacyAdminAmount(args[1]);
