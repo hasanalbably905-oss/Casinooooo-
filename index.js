@@ -1420,10 +1420,10 @@ async function privateRoomCommand(message, args) {
 }
 async function challenge(message, args) {
   if (!CFG.gameRooms.includes(message.channel.id)) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب المحددة.');
-  const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
-  if (!challengeChannel || !challengeChannel.isTextBased()) return message.reply('روم عرض التحديات غير متاح حالياً.');
   const preference = String(args[1] || '').toLowerCase();
   if (['بوت', 'bot'].includes(preference)) return startBotChallenge(message, amountOf(args[2]));
+  const challengeChannel = await client.channels.fetch(CFG.challengeRoom).catch(() => null);
+  if (!challengeChannel || !challengeChannel.isTextBased()) return message.reply('روم عرض التحديات غير متاح حالياً.');
   if (['عام', 'فرندز'].includes(preference)) {
     const data = account(message.author.id);
     data.challenge = preference === 'عام' ? 'general' : 'friends';
@@ -1633,6 +1633,14 @@ async function refund(g, reason) {
 }
 async function sweep() {
   const now = Date.now();
+  for (const challenge of Object.values(db.botChallenges || {})) {
+    if (challenge && challenge.status === 'choosing' && Number(challenge.expiresAt) <= now) {
+      challenge.status = 'expired';
+      const channel = await client.channels.fetch(challenge.channelId).catch(() => null);
+      const msg = channel && channel.isTextBased() ? await channel.messages.fetch(challenge.messageId).catch(() => null) : null;
+      if (msg) await msg.edit({ content: '⌛ انتهت مهلة اختيار لعبة تحدي البوت.', embeds: [], components: [] }).catch(() => {});
+    }
+  }
   for (const tournament of Object.values(db.tournaments || {})) {
     if (tournament && tournament.status === 'active' && Number(tournament.endsAt) <= now) await finishTournament(tournament);
   }
