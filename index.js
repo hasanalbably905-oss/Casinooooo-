@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 const { handleGoldenCatalog } = require('./golden-catalog');
 const { handleGoldenSocial } = require('./golden-social');
+const { handleGoldenUtilities } = require('./golden-utilities');
 
 const CFG = {
   owner: process.env.OWNER_ID || '1483368871032520704',
@@ -1370,6 +1371,7 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (await handleGoldenUtilities(message, { isAdmin: admin })) return;
     if (await handleGoldenSocial(message, { account, save, premiumRoleId: process.env.GOLDEN_PREMIUM_ROLE_ID || '1505176499836424305' })) return;
     if (await handleGoldenCatalog(message, { ownerId: CFG.owner })) return;
     if (cmd === 'ربط') return requestAccountLink(message, args);
