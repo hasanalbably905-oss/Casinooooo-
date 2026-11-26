@@ -17,9 +17,19 @@
 - `WITHDRAW_PANEL_CHANNEL_ID`: روم لوحة السحب.
 - `WITHDRAW_REQUESTS_CHANNEL_ID`: روم مراجعة طلبات السحب.
 - `PROBOT_ID`: آيدي ProBot.
-- `GITHUB_TOKEN`: توكن GitHub بصلاحية Contents Read and write للنسخ الاحتياطي.
+- `GITHUB_TOKEN`: توكن GitHub بصلاحية Contents Read and write للنسخ الاحتياطي (ضروري حتى لا تضيع البيانات عند إعادة نشر الاستضافة).
 - `GITHUB_REPOSITORY`: المستودع المستخدم للنسخ الاحتياطي.
-- `GITHUB_DATA_BRANCH`: فرع البيانات، الافتراضي `bot-data`.
+- `GITHUB_DATA_BRANCH`: فرع البيانات، الافتراضي `bot-data`، وينشئه البوت تلقائياً إذا لم يكن موجوداً.
+- `GITHUB_BASE_BRANCH`: الفرع الذي تُنشأ منه نسخة البيانات أول مرة، الافتراضي `main`.
+
+### تفعيل حفظ البيانات الدائم
+1. أنشئ GitHub Personal Access Token بصلاحية Contents: Read and write على مستودع البوت.
+2. أضف التوكن في متغيرات الاستضافة باسم `GITHUB_TOKEN` فقط؛ لا تضعه داخل ملفات المشروع ولا ترسله في Discord.
+3. تأكد أن `GITHUB_REPOSITORY` يساوي `hasanalbably905-oss/Casinooooo-` أو اسم مستودعك الصحيح.
+4. شغّل البوت. سينشئ فرع `bot-data` تلقائياً ويحفظ `data/store.json` فيه بعد كل حفظ، مع حفظ احتياطي كل دقيقة.
+5. عند إعادة التشغيل يسترجع البوت بيانات الأعضاء وكل مجموعات البيانات من الفرع قبل تسجيل الدخول.
+
+إذا لم يكن `GITHUB_TOKEN` مضبوطاً، فالحفظ المحلي وحده لا يضمن بقاء البيانات بعد حذف ملفات الاستضافة أو إعادة نشرها.
 - `DISCORD_TOKEN`: توكن البوت (مطلوب).
 
 ## أوامر الأعضاء
