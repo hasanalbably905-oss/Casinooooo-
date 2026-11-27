@@ -1394,31 +1394,38 @@ async function botChallengeSelect(i) {
   const challenge = db.botChallenges[id];
   if (!challenge || challenge.status !== 'choosing') return ephemeral(i, 'هذا التحدي انتهى أو لم يعد متاحاً.');
   if (i.user.id !== challenge.userId) return ephemeral(i, 'هذه القائمة مخصصة لصاحب التحدي فقط.');
+
+  // Acknowledge the component immediately. Saving to GitHub can take longer
+  // than Discord's 3-second interaction deadline.
+  await i.deferUpdate();
+
   if (Date.now() >= challenge.expiresAt) {
     challenge.status = 'expired';
     await save();
-    return i.update({ content: '⌛ انتهت مهلة اختيار اللعبة. ابدأ تحدياً جديداً.', embeds: [], components: [] });
+    return i.editReply({ content: '⌛ انتهت مهلة اختيار اللعبة. ابدأ تحدياً جديداً.', embeds: [], components: [] });
   }
   const selected = i.values[0];
   if (selected === 'cancel_challenge') {
     challenge.status = 'cancelled';
     challenge.cancelledAt = Date.now();
     await save();
-    return i.update({ content: '❌ | **تم إلغاء تحدي البوت. لم يتم خصم أي مبلغ.**', embeds: [], components: [] });
+    return i.editReply({ content: '❌ | **تم إلغاء تحدي البوت. لم يتم خصم أي مبلغ.**', embeds: [], components: [] });
   }
-  if (!['blackjack', 'wheel', 'takribi', 'find_ball', 'dice', 'coinflip', 'tictactoe', 'towers'].includes(selected)) return ephemeral(i, 'اللعبة المختارة غير متاحة حالياً.');
+  if (!['blackjack', 'wheel', 'takribi', 'find_ball', 'dice', 'coinflip', 'tictactoe', 'towers'].includes(selected)) {
+    return i.editReply({ content: 'اللعبة المختارة غير متاحة حالياً.', embeds: [], components: [] });
+  }
   const wallet = account(challenge.userId);
   if (wallet.coins < challenge.stake) {
     challenge.status = 'cancelled';
     await save();
-    return i.update({ content: 'رصيدك لم يعد كافياً لبدء اللعبة.', embeds: [], components: [] });
+    return i.editReply({ content: 'رصيدك لم يعد كافياً لبدء اللعبة.', embeds: [], components: [] });
   }
   challenge.status = 'started';
   challenge.selectedGame = selected;
   challenge.startedAt = Date.now();
   await save();
   const labels = { blackjack: 'بلاك جاك', wheel: 'عجلة الحظ', takribi: 'الرقم التقريبي', find_ball: 'البحث عن الكرة', dice: 'النرد', coinflip: 'قلب العملة', tictactoe: 'اكس او', towers: 'الأبراج' };
-  await i.update({
+  await i.editReply({
     content: '✅ تم اختيار **' + labels[selected] + '**. بدأ تحديك ضد البوت بالأسفل.',
     embeds: [], components: [],
   });
