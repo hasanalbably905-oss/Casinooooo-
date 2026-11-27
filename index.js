@@ -2961,6 +2961,31 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (['backup', 'باكاب', 'باك-اب', 'نسخة-احتياطية'].includes(cmd)) {
+      if (!CFG.owners.includes(String(message.author.id))) {
+        return message.reply('❌ هذا الأمر مخصص للأونرز فقط.');
+      }
+      if (!GH_TOKEN) {
+        return message.reply('❌ النسخ الاحتياطي غير جاهز: متغير GITHUB_TOKEN غير موجود.');
+      }
+      if (githubDataBlocked) {
+        return message.reply('❌ النسخ الاحتياطي متوقف لحماية البيانات. تحقق من إعداد المستودع الخاص وصلاحيات التوكن.');
+      }
+
+      // Wait for any queued save, then write the latest local database and upload it.
+      await writeChain.catch(() => {});
+      const backupContent = JSON.stringify(db, null, 2);
+      const tempPath = FILE + '.tmp';
+      await fs.promises.writeFile(tempPath, backupContent, 'utf8');
+      await fs.promises.rename(tempPath, FILE);
+      await pushGitHubData(backupContent);
+
+      if (!githubFileSha || githubDataBlocked) {
+        return message.reply('❌ لم يتم تأكيد النسخ الاحتياطي. راجع سجلات البوت.');
+      }
+      return message.reply('✅ **تم إنشاء النسخة الاحتياطية بنجاح!**\\n📦 تم حفظ بيانات المستخدمين والأرصدة في مستودع GitHub الخاص.');
+    }
+
     if (cmd === 'setoninvite') {
       if (!CFG.owners.includes(message.author.id)) return message.reply('هذا الأمر مخصص للأونرات فقط.');
       db.settings = db.settings || {};
