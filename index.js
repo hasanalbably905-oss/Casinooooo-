@@ -2983,7 +2983,7 @@ client.on('messageCreate', async message => {
       if (!githubFileSha || githubDataBlocked) {
         return message.reply('❌ لم يتم تأكيد النسخ الاحتياطي. راجع سجلات البوت.');
       }
-      return message.reply('✅ **تم إنشاء النسخة الاحتياطية بنجاح!**\\n📦 تم حفظ بيانات المستخدمين والأرصدة في مستودع GitHub الخاص.');
+      return message.reply('✅ **تم إنشاء النسخة الاحتياطية بنجاح!**\n📦 تم حفظ بيانات المستخدمين والأرصدة في مستودع GitHub الخاص.');
     }
 
     if (cmd === 'setoninvite') {
