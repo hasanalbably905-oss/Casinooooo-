@@ -141,7 +141,6 @@ async function handleGoldenCatalog(message, options = {}) {
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
       .setTitle('🎮 أوامر Batoot Casino')
-      .setDescription('الأوامر المنقولة من لوحة المساعدة في مشروع Golden.')
       .addFields(COMMAND_GROUPS.map(group => ({ ...group, inline: true })))
       .setFooter({ text: 'اكتب العاب لعرض الألعاب' })
       .setTimestamp();
