@@ -1378,7 +1378,7 @@ async function startBotChallenge(message, amount) {
       { label: 'الأبراج', value: 'towers', description: 'اختر مستوى الصعوبة وتسلق خمسة مستويات', emoji: '🗼' },
       { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'قم بإلغاء التحدي الحالي.', emoji: '🚫' },
     );  const sent = await message.reply({
-    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`' + (isCasinoOwner(message.author.id) ? '\n👑 **ميزة الأونر مفعلة: أفضلية 75% عند اللعب ضد البوت.**' : '') + '\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
+    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`' + (CFG.owners.includes(String(message.author.id)) ? '\n👑 **ميزة الأونر مفعلة: أفضلية 75% عند اللعب ضد البوت.**' : '') + '\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
     components: [new ActionRowBuilder().addComponents(menu)],
   }).catch(() => null);
   if (!sent) {
@@ -2383,7 +2383,9 @@ async function sweep() {
       challenge.status = 'expired';
       const channel = await client.channels.fetch(challenge.channelId).catch(() => null);
       const msg = channel && channel.isTextBased() ? await channel.messages.fetch(challenge.messageId).catch(() => null) : null;
-      if (msg) await msg.edit({ content: '⌛ انتهت مهلة اختيار لعبة تحدي البوت.', embeds: [], components: [] }).catch(() => {});
+      if (msg && typeof msg.edit === 'function') {
+        await msg.edit({ content: '⌛ انتهت مهلة اختيار لعبة تحدي البوت.', embeds: [], components: [] }).catch(() => {});
+      }
     }
   }
   for (const tournament of Object.values(db.tournaments || {})) {
