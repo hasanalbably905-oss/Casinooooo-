@@ -2098,9 +2098,12 @@ async function privateRoomCommand(message, args) {
 async function challenge(message, args) {
   const activePrivateRoom = db.privateRooms[message.channel.id];
   const isActivePrivateRoom = Boolean(activePrivateRoom && activePrivateRoom.status === 'active');
-  if (!CFG.gameRooms.includes(message.channel.id) && !isActivePrivateRoom) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب أو الرومات الخاصة النشطة.');
   const preference = String(args[1] || '').toLowerCase();
-  if (['بوت', 'bot'].includes(preference)) return startBotChallenge(message, amountOf(args[2]));
+  const isBotChallenge = ['بوت', 'bot'].includes(preference);
+  const allowedRoom = CFG.gameRooms.includes(message.channel.id) || isActivePrivateRoom ||
+    (isBotChallenge && message.channel.id === CFG.challengeRoom);
+  if (!allowedRoom) return message.reply('أوامر التحدي تعمل فقط في رومات الألعاب أو الرومات الخاصة النشطة.');
+  if (isBotChallenge) return startBotChallenge(message, amountOf(args[2]));
   const challengeChannel = message.channel;
   if (['عام', 'فرندز'].includes(preference)) {
     const data = account(message.author.id);
