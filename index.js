@@ -341,6 +341,23 @@ function amountOf(input) {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 const fmt = n => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString('en-US');
+function activeRechargeBonus() {
+  const event = db.settings && db.settings.rechargeBonus;
+  if (!event || !event.active || Date.now() >= event.endsAt) return null;
+  return event;
+}
+function calculateRechargeBonus(amount) {
+  const event = activeRechargeBonus();
+  if (!event) return { percent: 0, bonus: 0 };
+  const percent = crypto.randomInt(event.minPercent, event.maxPercent + 1);
+  return { percent, bonus: Math.floor(amount * percent / 100) };
+}
+function parseBonusDuration(value) {
+  const match = String(value || '').toLowerCase().match(/^(\\d+)(s|m|h|d)$/);
+  if (!match) return null;
+  const duration = Number(match[1]) * ({ s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2]]);
+  return Number.isSafeInteger(duration) && duration > 0 && duration <= 7 * 86400000 ? duration : null;
+}
 const admin = id => CFG.owners.includes(String(id)) || CFG.admins.includes(String(id));
 function active(id, excludeId) {
   return Object.values(db.games).some(g => g && g.id !== excludeId && ['pending', 'awaiting_accept', 'selecting', 'selecting_subtype', 'playing'].includes(g.status) && (g.p1 === id || g.p2 === id));
@@ -434,7 +451,12 @@ async function creditReviewButton(i, parts) {
   if (parts[1] === 'approve') {
     const wallet = account(review.memberId);
     if (!canAddCoins(wallet, review.amount)) return ephemeral(i, 'لا يمكن إضافة هذا المبلغ بأمان بسبب حد الرصيد. راجع الحساب يدوياً.');
-    wallet.coins += review.amount;
+    const bonus = calculateRechargeBonus(review.amount);
+    const totalCredit = review.amount + bonus.bonus;
+    if (!canAddCoins(wallet, totalCredit)) return ephemeral(i, 'لا يمكن إضافة مبلغ الشحن والبونص بسبب حد الرصيد. راجع الحساب يدوياً.');
+    wallet.coins += totalCredit;
+    review.bonus = bonus.bonus;
+    review.bonusPercent = bonus.percent;
     review.status = 'approved';
     review.balanceAfter = wallet.coins;
   } else if (parts[1] === 'reject') {
@@ -491,11 +513,13 @@ client.probot.on('transfered', async (guild, data, error) => {
     }
 
     const userAccount = account(memberId);
-    if (!canAddCoins(userAccount, credited)) {
+    const rechargeBonus = calculateRechargeBonus(credited);
+    const totalCredit = credited + rechargeBonus.bonus;
+    if (!canAddCoins(userAccount, totalCredit)) {
       await queueCreditReview(memberId, credited, guild, data, 'إضافة المبلغ ستتجاوز الحد الآمن للرصيد.');
       return;
     }
-    userAccount.coins += credited;
+    userAccount.coins += totalCredit;
     {
       db.processedTransfers[transferId] = Date.now();
       const ids = Object.keys(db.processedTransfers);
@@ -515,6 +539,7 @@ client.probot.on('transfered', async (guild, data, error) => {
       .setDescription('تم الشحن بنجاح')
       .addFields(
         { name: 'المبلغ', value: '> ' + fmt(credited) },
+        ...(rechargeBonus.bonus > 0 ? [{ name: 'بونص الشحن', value: '> +' + fmt(rechargeBonus.bonus) + ' (' + rechargeBonus.percent + '%)' }] : []),
         { name: 'المستلم', value: '> <@' + memberId + '>' },
         { name: 'الرصيد الحالي', value: '> ' + fmt(userAccount.coins) },
       )
@@ -3005,6 +3030,30 @@ client.on('messageCreate', async message => {
   const args = text.split(/\s+/);
   const cmd = args[0].toLowerCase();
   try {
+    if (['bonus', '.bonus', 'بونص'].includes(cmd)) {
+      if (!admin(message.author.id)) return message.reply('❌ هذا الأمر للإدارة فقط.');
+      const range = String(args[1] || '').match(/^(\\d{1,3})-(\\d{1,3})%?$/);
+      const duration = parseBonusDuration(args[2]);
+      if (!range || !duration) return message.reply('❎ الصيغة: `.bonus 1-100% 5m`\\nالنسبة من 1 إلى 100، والمدة مثل 5m أو 2h أو 1d.');
+      const minPercent = Number(range[1]), maxPercent = Number(range[2]);
+      if (minPercent < 1 || maxPercent > 100 || minPercent > maxPercent) return message.reply('❎ النسبة غير صحيحة. استخدم نطاقاً من 1% إلى 100%.');
+      const now = Date.now();
+      db.settings.rechargeBonus = { active: true, minPercent, maxPercent, startedAt: now, endsAt: now + duration, startedBy: message.author.id };
+      await save();
+      return message.channel.send({ embeds: [new EmbedBuilder().setColor(0xf1c40f)
+        .setTitle('🎁 تفعيل بونص شحن عشوائي!')
+        .setDescription('تم تفعيل بونص الشحن بنجاح!\\n\\n🎲 كل عضو يشحن يحصل على نسبة عشوائية خلال مدة الحدث.\\n🔒 يُضاف البونص تلقائياً إلى رصيد العضو.')
+        .addFields(
+          { name: '📊 نطاق النسبة', value: minPercent + '% - ' + maxPercent + '%', inline: true },
+          { name: '⏱️ مدة الحدث', value: args[2], inline: true },
+        ).setFooter({ text: 'Batoot Casino' }).setTimestamp()] });
+    }
+    if (['bonusoff', '.bonusoff', 'إيقاف-البونص'].includes(cmd)) {
+      if (!admin(message.author.id)) return message.reply('❌ هذا الأمر للإدارة فقط.');
+      if (db.settings.rechargeBonus) db.settings.rechargeBonus.active = false;
+      await save();
+      return message.reply('⛔ تم إيقاف بونص الشحن.');
+    }
     if (['backup', 'باكاب', 'باك-اب', 'نسخة-احتياطية'].includes(cmd)) {
       if (!CFG.owners.includes(String(message.author.id))) {
         return message.reply('❌ هذا الأمر مخصص للأونرز فقط.');
