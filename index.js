@@ -2199,7 +2199,8 @@ async function challenge(message, args) {
   const g = db.games[id] = {
     id, p1: message.author.id, p2: user.id, bet, status: 'pending',
     escrow: false, channel: challengeChannel.id, message: null, mode: null,
-    expires: Date.now() + CFG.inviteMs, created: Date.now(),
+    // Give the challenger enough time to choose a game; acceptance still uses CFG.inviteMs.
+    expires: Date.now() + 5 * 60 * 1000, created: Date.now(),
   };
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -2554,7 +2555,7 @@ async function gameButton(i, parts) {
     return i.update({ content: '<@' + g.closeTurn + '>\n اصبح دورك !', embeds: [legacyCloseEmbed(g)], components: gameRows(g) });
   }
   if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps', 'selectmatch', 'selectsortnum', 'selectbombchips'].includes(action)) {
-    if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
+    if (g.status !== 'pending') return ephemeral(i, g.status === 'expired' ? '⌛ انتهت مهلة اختيار اللعبة. ابدأ تحدياً جديداً.' : 'تم اختيار اللعبة أو إلغاء التحدي مسبقاً. ابدأ تحدياً جديداً إذا أردت المحاولة.');
     if (uid !== g.p1) return ephemeral(i, 'صاحب التحدي فقط يستطيع اختيار اللعبة أو إلغاءها.');
     if (action === 'cancel') {
       g.status = 'cancelled';
