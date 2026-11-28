@@ -3040,7 +3040,7 @@ client.on('messageCreate', async message => {
       const now = Date.now();
       db.settings.rechargeBonus = { active: true, minPercent, maxPercent, startedAt: now, endsAt: now + duration, startedBy: message.author.id };
       await save();
-      return message.channel.send({ embeds: [new EmbedBuilder().setColor(0xf1c40f)
+      return message.channel.send({ content: args.slice(3).includes('@everyone') ? '@everyone' : undefined, allowedMentions: { parse: args.slice(3).includes('@everyone') ? ['everyone'] : [] }, embeds: [new EmbedBuilder().setColor(0xf1c40f)
         .setTitle('🎁 تفعيل بونص شحن عشوائي!')
         .setDescription('تم تفعيل بونص الشحن بنجاح!\n\n🎲 كل عضو يشحن يحصل على نسبة عشوائية خلال مدة الحدث.\n🔒 يُضاف البونص تلقائياً إلى رصيد العضو.')
         .addFields(
