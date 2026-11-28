@@ -1393,7 +1393,6 @@ async function startBotChallenge(message, amount) {
     .setPlaceholder('🔽 اختر اللعبة')
     .setMinValues(1).setMaxValues(1)
     .addOptions(
-      { label: 'الرقم التقريبي - ضد البوت', value: 'takribi', description: 'لعبة الرقم التقريبي ضد البوت', emoji: '🎯' },
       { label: 'البحث عن الكرة', value: 'find_ball', description: 'اختر الكوب الذي يخفي الكرة', emoji: '🥎' },
       { label: 'لعبة النرد', value: 'dice', description: 'ثلاث رميات — الوضع العادي أو العكسي', emoji: '🎲' },
       { label: 'عجلة الحظ', value: 'wheel', description: 'اختر الأصفر أو الأخضر أو الأسود', emoji: '🎡' },
@@ -1436,7 +1435,7 @@ async function botChallengeSelect(i) {
     await save();
     return i.editReply({ content: '❌ | **تم إلغاء تحدي البوت. لم يتم خصم أي مبلغ.**', embeds: [], components: [] });
   }
-  if (!['blackjack', 'wheel', 'takribi', 'find_ball', 'dice', 'coinflip', 'tictactoe', 'towers'].includes(selected)) {
+  if (!['blackjack', 'wheel', 'find_ball', 'dice', 'coinflip', 'tictactoe', 'towers'].includes(selected)) {
     return i.editReply({ content: 'اللعبة المختارة غير متاحة حالياً.', embeds: [], components: [] });
   }
   const wallet = account(challenge.userId);
@@ -1449,7 +1448,7 @@ async function botChallengeSelect(i) {
   challenge.selectedGame = selected;
   challenge.startedAt = Date.now();
   await save();
-  const labels = { blackjack: 'بلاك جاك', wheel: 'عجلة الحظ', takribi: 'الرقم التقريبي', find_ball: 'البحث عن الكرة', dice: 'النرد', coinflip: 'قلب العملة', tictactoe: 'اكس او', towers: 'الأبراج' };
+  const labels = { blackjack: 'بلاك جاك', wheel: 'عجلة الحظ', find_ball: 'البحث عن الكرة', dice: 'النرد', coinflip: 'قلب العملة', tictactoe: 'اكس او', towers: 'الأبراج' };
   await i.editReply({
     content: '✅ تم اختيار **' + labels[selected] + '**. بدأ تحديك ضد البوت بالأسفل.',
     embeds: [], components: [],
@@ -1463,7 +1462,6 @@ async function botChallengeSelect(i) {
   if (selected === 'wheel') return startWheel(fakeMessage, challenge.stake);
   if (selected === 'tictactoe') return startBotTicTacToe(fakeMessage, challenge);
   if (selected === 'towers') return startBotTowers(fakeMessage, challenge);
-  if (selected === 'takribi') return startBotTakribi(fakeMessage, challenge);
   return startBotMiniGame(fakeMessage, challenge, selected);
 }
 
@@ -1503,49 +1501,6 @@ async function settleGoldenBotGame(challenge, outcome, detail, multiplier = 0.93
   }).catch(() => {});
 }
 
-async function startBotTakribi(message, challenge) {
-  const wallet = account(challenge.userId);
-  if (wallet.coins < challenge.stake) {
-    challenge.status = 'cancelled'; await save();
-    return message.reply('رصيدك غير كافٍ لبدء اللعبة.');
-  }
-
-  // Use the same target and number ranges as the members' "الحد التقريبي" game.
-  const targets = [];
-  for (let n = 19; n <= 79; n += 3) targets.push(n);
-  const lows = [2,3,3,3,3,3,4,4,4,4,4,5,5,5,6,6,6,6,6,7,7,7];
-  const lowHighs = [4,5,5,5,5,5,7,7,7,7,7,9,9,9,11,11,11,11,11,13,13,13];
-  const highsLow = [5,6,6,7,8,8,9,10,10,11,12,12,13,14,15,15,16,16,17,18,18,19];
-  const highs = [7,8,9,10,11,12,13,14,15,16,17,18,19,20,22,22,23,24,25,26,27];
-  const index = crypto.randomInt(targets.length);
-  const target = targets[index];
-  const state = challenge.takribi = {
-    target,
-    low: [lows[index], lowHighs[index]],
-    high: [highsLow[index], highs[index]],
-    player: [], bot: [], playerDone: false, botDone: false,
-  };
-  challenge.status = 'playing';
-  challenge.mode = 'takribi';
-  challenge.expiresAt = Date.now() + 90000;
-
-  const total = values => values.reduce((sum, value) => sum + value, 0);
-  const makeEmbed = () => new EmbedBuilder().setColor(0x000000).setTitle('بيانات التحدي')
-    .setDescription('اقصى رقم : **' + state.target + '**')
-    .addFields(
-      { name: '👤 ' + (message.author.username || 'أنت'), value: '> ' + (state.player.length ? state.player.join(' + ') + ' = **' + total(state.player) + '**\n0 (متبقي **' + Math.max(0, state.target-total(state.player)) + '** )' : 'Waiting...\n0 (متبقي **' + state.target + '** )') },
-      { name: '🤖 البوت', value: '> ' + (state.bot.length ? state.bot.join(' + ') + ' = **' + total(state.bot) + '**\n0 (متبقي **' + Math.max(0, state.target-total(state.bot)) + '** )' : 'Waiting...\n0 (متبقي **' + state.target + '** )') }
-    )
-    .setFooter({ text: 'الرقم التقريبي • المبلغ: ' + fmt(challenge.stake) });
-  const makeRows = () => [new ActionRowBuilder().addComponents(
-    btn('bmt:low:' + challenge.id, 'الحد الأدنى', ButtonStyle.Secondary, state.playerDone),
-    btn('bmt:high:' + challenge.id, 'الحد الأعلى', ButtonStyle.Primary, state.playerDone),
-    btn('bmt:finish:' + challenge.id, 'إنهاء الدور', ButtonStyle.Success, state.playerDone || !state.player.length)
-  )];
-  const sent = await message.reply({ embeds: [makeEmbed()], components: makeRows() });
-  challenge.gameMessageId = sent.id;
-  await save();
-}
 async function startBotTicTacToe(message, challenge) {
   const wallet = account(challenge.userId);
   if (!Number.isSafeInteger(challenge.stake) || challenge.stake <= 0 || wallet.coins < challenge.stake) {
@@ -1765,80 +1720,7 @@ async function botMiniGameButton(i) {
       .setFooter({text:'Batoot Casino • Golden Dice Rules'})],components:[new ActionRowBuilder().addComponents(btn('bm:roll:'+id,'🎲 رمي النرد',ButtonStyle.Success))]});
   }
   let outcome='loss',detail='';
-  if (challenge.mode === 'takribi' && ['low','high','finish'].includes(action)) {
-    const st = challenge.takribi;
-    if (!st) return ephemeral(i, 'بيانات الجولة غير متاحة.');
-    if (st.playerDone) return ephemeral(i, 'أنهيت دورك بالفعل.');
-    const total = values => values.reduce((sum, value) => sum + value, 0);
-    const playerTotal = total(st.player);
-    if (action === 'finish') {
-      if (!st.player.length) return ephemeral(i, 'اختر رقمًا واحدًا على الأقل قبل إنهاء دورك.');
-      st.playerDone = true;
-    } else {
-      const range = action === 'low' ? st.low : st.high;
-      const number = crypto.randomInt(range[0], range[1] + 1);
-      st.player.push(number);
-      if (total(st.player) >= st.target) st.playerDone = true;
-    }
-
-    // The AI chooses a legal range based on the remaining distance, then decides
-    // whether continuing is worthwhile instead of using a fixed win percentage.
-    if (!st.botDone) {
-      const botTotal = total(st.bot);
-      const gap = st.target - botTotal;
-      const choices = [st.low, st.high].filter(range => range[0] <= gap);
-      if (!choices.length || (st.bot.length && gap <= Math.max(st.low[1], st.high[1]) && crypto.randomInt(100) < 35)) {
-        st.botDone = true;
-      } else {
-        const range = choices.sort((a,b) => {
-          const aMid = (a[0] + Math.min(a[1], gap)) / 2;
-          const bMid = (b[0] + Math.min(b[1], gap)) / 2;
-          return Math.abs(gap - bMid) - Math.abs(gap - aMid);
-        })[0];
-        st.bot.push(crypto.randomInt(range[0], Math.min(range[1], gap) + 1));
-        if (total(st.bot) >= st.target) st.botDone = true;
-      }
-    }
-
-    if (st.playerDone && !st.botDone) {
-      while (!st.botDone) {
-        const gap = st.target - total(st.bot);
-        const choices = [st.low, st.high].filter(range => range[0] <= gap);
-        if (!choices.length) { st.botDone = true; break; }
-        const range = choices.sort((a,b) => Math.abs(gap - (b[0]+Math.min(b[1],gap))/2) - Math.abs(gap - (a[0]+Math.min(a[1],gap))/2))[0];
-        st.bot.push(crypto.randomInt(range[0], Math.min(range[1], gap) + 1));
-        if (total(st.bot) >= st.target) st.botDone = true;
-      }
-    }
-
-    await i.deferUpdate();
-    if (st.playerDone && st.botDone) {
-      const p = total(st.player), b = total(st.bot);
-      const pDiff = Math.abs(st.target - p), bDiff = Math.abs(st.target - b);
-      const outcome = pDiff === bDiff ? 'draw' : pDiff < bDiff ? 'win' : 'loss';
-      const detail = '**الرقم المطلوب:** ' + st.target +
-        '\n**أرقامك:** ' + (st.player.join(' + ') || '—') + ' = **' + p + '**' +
-        '\n**أرقام البوت:** ' + (st.bot.join(' + ') || '—') + ' = **' + b + '**' +
-        '\n**الفارق:** ' + pDiff + ' / ' + bDiff;
-      await settleGoldenBotGame(challenge, outcome, detail);
-      return;
-    }
-    await save();
-    const makeEmbed = () => new EmbedBuilder().setColor(0x000000).setTitle('بيانات التحدي')
-      .setDescription('اقصى رقم : **' + st.target + '**')
-      .addFields(
-        { name: '👤 ' + (i.user.username || 'أنت'), value: '> ' + (st.player.length ? st.player.join(' + ') + ' = **' + total(st.player) + '**\n0 (متبقي **' + Math.max(0,st.target-total(st.player)) + '** )' : 'Waiting...\n0 (متبقي **' + st.target + '** )') },
-        { name: '🤖 البوت', value: '> ' + (st.bot.length ? st.bot.join(' + ') + ' = **' + total(st.bot) + '**\n0 (متبقي **' + Math.max(0,st.target-total(st.bot)) + '** )' : 'Waiting...\n0 (متبقي **' + st.target + '** )') }
-      ).setFooter({ text: 'الرقم التقريبي • المبلغ: ' + fmt(challenge.stake) });
-    return i.message.edit({ embeds: [makeEmbed()], components: [new ActionRowBuilder().addComponents(
-      btn('bmt:low:' + challenge.id, 'الحد الأدنى', ButtonStyle.Secondary, st.playerDone),
-      btn('bmt:high:' + challenge.id, 'الحد الأعلى', ButtonStyle.Primary, st.playerDone),
-      btn('bmt:finish:' + challenge.id, 'إنهاء الدور', ButtonStyle.Success, st.playerDone || !st.player.length)
-    )] });
-  }
-  if(challenge.mode==='takribi'&&/^guess[1-5]$/.test(action)){
-    const guess=Number(action.slice(5));detail='اختيارك: **'+guess+'**\nالرقم السري: **'+challenge.secret+'**';outcome=guess===challenge.secret?'win':'loss';
-  }else if(challenge.mode==='find_ball'&&/^cup[1-3]$/.test(action)){
+  if(challenge.mode==='find_ball'&&/^cup[1-3]$/.test(action)){
     const cup=Number(action.slice(3));
     const botWins=crypto.randomInt(100)<69;
     const correct=botWins?([1,2,3].filter(n=>n!==cup)[crypto.randomInt(2)]):cup;
