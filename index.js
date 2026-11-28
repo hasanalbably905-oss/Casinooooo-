@@ -1403,7 +1403,7 @@ async function startBotChallenge(message, amount) {
       { label: 'الأبراج', value: 'towers', description: 'اختر مستوى الصعوبة وتسلق خمسة مستويات', emoji: '🗼' },
       { label: 'إلغاء التحدي', value: 'cancel_challenge', description: 'قم بإلغاء التحدي الحالي.', emoji: '🚫' },
     );  const sent = await message.reply({
-    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`' + (CFG.owners.includes(String(message.author.id)) ? '\n👑 **ميزة الأونر مفعلة: أفضلية 75% عند اللعب ضد البوت.**' : '') + '\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
+    content: '🔥 | **تحدي جديد قيد الانتظار!**\n🃏 **المبلغ الذي قمت بتحديده:** \`' + fmt(amount) + '\`' + '\n\n🔽 **يرجى اختيار لعبة من القائمة أدناه:**',
     components: [new ActionRowBuilder().addComponents(menu)],
   }).catch(() => null);
   if (!sent) {
@@ -2588,7 +2588,6 @@ async function gameButton(i, parts) {
         '> المبلغ الذي قمت بتحديده: `' + fmt(g.bet) + '`'
       )
       .addFields({ name: details.name, value: details.value }, { name: 'المبلغ:', value: fmt(g.bet) })
-      .addFields({ name: '👑 ميزة الأونر', value: 'إذا شارك أحد الأونرز، يحصل على أفضلية فوز بنسبة 75% في هذه المواجهة.' })
       .setFooter({ text: 'Batoot Casino | بانتظار موافقة اللاعب' });
     await save();
     await i.deferReply({ ephemeral: true });
