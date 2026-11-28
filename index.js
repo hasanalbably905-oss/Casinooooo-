@@ -353,7 +353,7 @@ function calculateRechargeBonus(amount) {
   return { percent, bonus: Math.floor(amount * percent / 100) };
 }
 function parseBonusDuration(value) {
-  const match = String(value || '').toLowerCase().match(/^(\\d+)(s|m|h|d)$/);
+  const match = String(value || '').toLowerCase().match(/^(\d+)(s|m|h|d)$/);
   if (!match) return null;
   const duration = Number(match[1]) * ({ s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2]]);
   return Number.isSafeInteger(duration) && duration > 0 && duration <= 7 * 86400000 ? duration : null;
@@ -398,7 +398,7 @@ async function queueCreditReview(memberId, amount, guild, data, reason) {
   const channel = await client.channels.fetch(CFG.requestsRoom).catch(() => null);
   if (channel && channel.isTextBased()) {
     const msg = await channel.send({
-      embeds: [makeEmbed('مراجعة شحن مطلوبة', 'تعذر التحقق آلياً من رقم عملية فريد أو من إمكانية إضافة المبلغ بأمان.\\n\\nالعضو: <@' + memberId + '>\\nالمبلغ: **' + fmt(amount) + '**\\nالسبب: ' + reason + '\\nرقم المراجعة: `' + id + '`')],
+      embeds: [makeEmbed('مراجعة شحن مطلوبة', 'تعذر التحقق آلياً من رقم عملية فريد أو من إمكانية إضافة المبلغ بأمان.\n\nالعضو: <@' + memberId + '>\nالمبلغ: **' + fmt(amount) + '**\nالسبب: ' + reason + '\nرقم المراجعة: `' + id + '`')],
       components: [new ActionRowBuilder().addComponents(
         btn('c:approve:' + id, 'اعتماد الشحن', ButtonStyle.Success),
         btn('c:reject:' + id, 'رفض', ButtonStyle.Danger),
@@ -428,7 +428,7 @@ async function recoverCreditReviews() {
       if (existing) continue;
     }
     const msg = await channel.send({
-      embeds: [makeEmbed('مراجعة شحن — استعادة تلقائية', 'العضو: <@' + review.memberId + '>\\nالمبلغ: **' + fmt(review.amount) + '**\\nالسبب: ' + review.reason + '\\nرقم المراجعة: `' + review.id + '`')],
+      embeds: [makeEmbed('مراجعة شحن — استعادة تلقائية', 'العضو: <@' + review.memberId + '>\nالمبلغ: **' + fmt(review.amount) + '**\nالسبب: ' + review.reason + '\nرقم المراجعة: `' + review.id + '`')],
       components: [new ActionRowBuilder().addComponents(
         btn('c:approve:' + review.id, 'اعتماد الشحن', ButtonStyle.Success),
         btn('c:reject:' + review.id, 'رفض', ButtonStyle.Danger),
@@ -707,7 +707,7 @@ function removeLinkedPair(a, b) {
 async function requestAccountLink(message, args) {
   const target = await targetUser(message, args[1]);
   if (!target || target.bot || target.id === message.author.id) {
-    return message.reply('❌ يجب عليك منشن الشخص الذي تريد الربط معه!\\nمثال: `ربط @user`');
+    return message.reply('❌ يجب عليك منشن الشخص الذي تريد الربط معه!\nمثال: `ربط @user`');
   }
   const targetMember = await message.guild.members.fetch(target.id).catch(() => null);
   if (!targetMember) return message.reply('❌ يجب أن يكون الطرفان داخل السيرفر.');
@@ -721,7 +721,7 @@ async function requestAccountLink(message, args) {
   const requesterLinks = linkedPartners(requesterId);
   const targetLinks = linkedPartners(targetId);
   if (requesterLinks.length >= 5) {
-    return message.reply('❌ وصلت للحد الأقصى! يمكنك الربط مع 5 أشخاص فقط.\\nاستخدم أمر `فصل @user` لفصل أحد الأشخاص أولاً.');
+    return message.reply('❌ وصلت للحد الأقصى! يمكنك الربط مع 5 أشخاص فقط.\nاستخدم أمر `فصل @user` لفصل أحد الأشخاص أولاً.');
   }
   if (targetLinks.length >= 5) return message.reply('❌ هذا الشخص وصل للحد الأقصى من الربط (5 أشخاص)!');
   if (hasLinkedPair(requesterId, targetId)) return message.reply('❌ أنتما مرتبطان بالفعل!');
@@ -732,7 +732,7 @@ async function requestAccountLink(message, args) {
   const requestEmbed = new EmbedBuilder()
     .setColor(0x0099FF)
     .setTitle('📎 طلب ربط حساب')
-    .setDescription('<@' + targetId + '>, لديك طلب ربط من <@' + requesterId + '>!\\n\\n**ملاحظة:** يمكنك الربط مع ما يصل إلى 5 أشخاص.\\nبعد الربط يمكنكما تبادل الأموال بحرية.')
+    .setDescription('<@' + targetId + '>, لديك طلب ربط من <@' + requesterId + '>!\n\n**ملاحظة:** يمكنك الربط مع ما يصل إلى 5 أشخاص.\nبعد الربط يمكنكما تبادل الأموال بحرية.')
     .setFooter({ text: 'لديك 15 ثانية للرد على الطلب' })
     .setTimestamp();
   const row = new ActionRowBuilder().addComponents(
@@ -875,7 +875,7 @@ async function unlinkAccounts(message, args) {
     partnerId = allPartners[0];
   } else {
     const partnerMentions = allPartners.map(id => '<@' + id + '>').join('، ');
-    return message.reply('❌ أنت مرتبط مع أكثر من شخص! حدد من تريد فصله:\\nالأشخاص المرتبطون: ' + partnerMentions + '\\nمثال: `فصل @user` أو `فصل all` لفصل الكل');
+    return message.reply('❌ أنت مرتبط مع أكثر من شخص! حدد من تريد فصله:\nالأشخاص المرتبطون: ' + partnerMentions + '\nمثال: `فصل @user` أو `فصل all` لفصل الكل');
   }
   removeLinkedPair(userId, partnerId);
   await save();
@@ -920,7 +920,7 @@ async function linkedAccountButton(i, parts) {
       embeds: [new EmbedBuilder()
         .setColor(0x00FF00)
         .setTitle('✅ تم الربط بنجاح!')
-        .setDescription('تم ربط <@' + req.from + '> مع <@' + req.to + '>\\n\\nيمكنكما الآن:\\n• استخدام `إيداع @user <مبلغ>` لتحويل أموال\\n• استخدام `سحب @user <مبلغ>` لسحب أموال\\n• استخدام `فلوس` لعرض الأرصدة\\n• استخدام `فصل @user` لإنهاء الربط مع شخص محدد')],
+        .setDescription('تم ربط <@' + req.from + '> مع <@' + req.to + '>\n\nيمكنكما الآن:\n• استخدام `إيداع @user <مبلغ>` لتحويل أموال\n• استخدام `سحب @user <مبلغ>` لسحب أموال\n• استخدام `فلوس` لعرض الأرصدة\n• استخدام `فصل @user` لإنهاء الربط مع شخص محدد')],
       components: []
     });
   }
@@ -996,7 +996,7 @@ async function showLegacyAccountInfo(message, user) {
         let balanceText = Number(pData.coins || 0).toLocaleString('en-US');
         partnerLines.push('<@' + pid + '> — **' + balanceText + '** كوين');
       }
-      linkedAccountsText = partnerLines.join('\\n');
+      linkedAccountsText = partnerLines.join('\n');
     }
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
@@ -1751,7 +1751,7 @@ async function botMiniGameButton(i) {
       const botRolls=Array.from({length:3},()=>reverse?(crypto.randomInt(100)<87?crypto.randomInt(1,4):crypto.randomInt(1,7)):(crypto.randomInt(100)<87?crypto.randomInt(4,7):crypto.randomInt(1,7)));
       const a=challenge.playerRolls.reduce((x,y)=>x+y,0),b=botRolls.reduce((x,y)=>x+y,0);
       const outcome=a===b?'draw':reverse?(a<b?'win':'loss'):(a>b?'win':'loss');
-      await settleGoldenBotGame(challenge,outcome,'رمياتك: **'+challenge.playerRolls.join(' + ')+' = '+a+'**\\nرميات البوت: **'+botRolls.join(' + ')+' = '+b+'**');
+      await settleGoldenBotGame(challenge,outcome,'رمياتك: **'+challenge.playerRolls.join(' + ')+' = '+a+'**\nرميات البوت: **'+botRolls.join(' + ')+' = '+b+'**');
       return;
     }
     challenge.status='expired';await save();
@@ -2435,7 +2435,7 @@ async function refund(g, reason) {
   account(g.p1).coins += returned;
   account(g.p2).coins += returned;
   const idleExpiry = String(reason || '').includes('انتهى الوقت');
-  g.result = (idleExpiry ? 'تم إلغاء التحدي بسبب الخمول\\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||' : reason) + '\\nتم خصم نصف المبلغ من الطرفين بسبب عدم إكمال التحدي.';
+  g.result = (idleExpiry ? 'تم إلغاء التحدي بسبب الخمول\n> || <@' + g.p1 + '> | <@' + g.p2 + '> ||' : reason) + '\nتم خصم نصف المبلغ من الطرفين بسبب عدم إكمال التحدي.';
   await save();
   await recordLiveBetResult('pvp:' + g.id, { userId: g.p1, opponentId: g.p2, amount: g.bet, game: 'تحدي الأعضاء', status: 'refund', payout: returned * 2, detail: g.result });
   await editGame(g, 'تم إلغاء التحدي', g.result, []);
@@ -2551,7 +2551,7 @@ async function gameButton(i, parts) {
       g.closeVisibility = 'natural';
     } else g.closeVisibility = parts[2] === 'show' ? 'show' : 'natural';
     g.status = 'playing'; g.expires = Date.now() + CFG.gameMs; initializeApproximateGame(g); await save();
-    return i.update({ content: '<@' + g.closeTurn + '>\\n اصبح دورك !', embeds: [legacyCloseEmbed(g)], components: gameRows(g) });
+    return i.update({ content: '<@' + g.closeTurn + '>\n اصبح دورك !', embeds: [legacyCloseEmbed(g)], components: gameRows(g) });
   }
   if (action === 'cancel' || ['dice', 'close', 'selectxo', 'rps', 'selectmatch', 'selectsortnum', 'selectbombchips'].includes(action)) {
     if (g.status !== 'pending') return ephemeral(i, 'اختيار اللعبة لم يعد متاحاً.');
@@ -3032,9 +3032,9 @@ client.on('messageCreate', async message => {
   try {
     if (['bonus', '.bonus', 'بونص'].includes(cmd)) {
       if (!admin(message.author.id)) return message.reply('❌ هذا الأمر للإدارة فقط.');
-      const range = String(args[1] || '').match(/^(\\d{1,3})-(\\d{1,3})%?$/);
+      const range = String(args[1] || '').match(/^(\d{1,3})-(\d{1,3})%?$/);
       const duration = parseBonusDuration(args[2]);
-      if (!range || !duration) return message.reply('❎ الصيغة: `.bonus 1-100% 5m`\\nالنسبة من 1 إلى 100، والمدة مثل 5m أو 2h أو 1d.');
+      if (!range || !duration) return message.reply('❎ الصيغة: `.bonus 1-100% 5m`\nالنسبة من 1 إلى 100، والمدة مثل 5m أو 2h أو 1d.');
       const minPercent = Number(range[1]), maxPercent = Number(range[2]);
       if (minPercent < 1 || maxPercent > 100 || minPercent > maxPercent) return message.reply('❎ النسبة غير صحيحة. استخدم نطاقاً من 1% إلى 100%.');
       const now = Date.now();
@@ -3042,7 +3042,7 @@ client.on('messageCreate', async message => {
       await save();
       return message.channel.send({ embeds: [new EmbedBuilder().setColor(0xf1c40f)
         .setTitle('🎁 تفعيل بونص شحن عشوائي!')
-        .setDescription('تم تفعيل بونص الشحن بنجاح!\\n\\n🎲 كل عضو يشحن يحصل على نسبة عشوائية خلال مدة الحدث.\\n🔒 يُضاف البونص تلقائياً إلى رصيد العضو.')
+        .setDescription('تم تفعيل بونص الشحن بنجاح!\n\n🎲 كل عضو يشحن يحصل على نسبة عشوائية خلال مدة الحدث.\n🔒 يُضاف البونص تلقائياً إلى رصيد العضو.')
         .addFields(
           { name: '📊 نطاق النسبة', value: minPercent + '% - ' + maxPercent + '%', inline: true },
           { name: '⏱️ مدة الحدث', value: args[2], inline: true },
@@ -3153,7 +3153,7 @@ client.on('messageCreate', async message => {
       const wallet = account(message.author.id);
       const amount = Math.max(0, Number(wallet.cashback) || 0);
       const embed = makeEmbed('💸 رصيد الكاش باك',
-        'رصيدك المتاح: **' + fmt(amount) + '** كوين\\nتحصل على 2.5% من قيمة الرهان عند الخسارة في التحديات.')
+        'رصيدك المتاح: **' + fmt(amount) + '** كوين\nتحصل على 2.5% من قيمة الرهان عند الخسارة في التحديات.')
         .setColor(0x2ecc71);
       const row = new ActionRowBuilder().addComponents(btn('cash:withdraw', 'سحب الكاش باك', ButtonStyle.Success));
       return message.reply({ embeds: [embed], components: [row] });
@@ -3334,7 +3334,7 @@ client.on('interactionCreate', async i => {
         wallet.coins += payout;
         await save();
         const embed = makeEmbed('✅ تم سحب الكاش باك',
-          'تمت إضافة **' + fmt(payout) + '** كوين إلى محفظتك.' + (isPrime ? '\\n👑 تمت مضاعفة المكافأة بسبب Prime.' : ''))
+          'تمت إضافة **' + fmt(payout) + '** كوين إلى محفظتك.' + (isPrime ? '\n👑 تمت مضاعفة المكافأة بسبب Prime.' : ''))
           .setColor(0x2ecc71);
         return i.update({ embeds: [embed], components: [] });
       });
